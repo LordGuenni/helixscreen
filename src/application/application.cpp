@@ -27,6 +27,7 @@
 #include "moonraker_manager.h"
 #include "panel_factory.h"
 #include "print_history_manager.h"
+#include "remote_control_server.h"
 #include "screenshot.h"
 #include "sound_manager.h"
 #include "static_panel_registry.h"
@@ -354,6 +355,15 @@ int Application::run(int argc, char** argv) {
 
     // Phase 14b: Check WiFi availability if expected
     check_wifi_availability();
+
+    // Phase 14c: Start remote control server
+    // Auto-enabled in --test mode, opt-in via --remote otherwise
+    if (m_args.remote_control || get_runtime_config()->test_mode) {
+        auto socket_path = helix::resolve_socket_path(m_args.remote_socket);
+        if (!helix::RemoteControlServer::instance().start(socket_path)) {
+            spdlog::warn("[Application] Remote control server failed to start (non-fatal)");
+        }
+    }
 
     // Phase 15: Connect to printer
     if (!connect_moonraker()) {
@@ -2083,7 +2093,10 @@ void Application::shutdown() {
     // Uninstall crash handler (clean shutdown is not a crash)
     crash_handler::uninstall();
 
-    // Stop memory monitor first
+    // Stop remote control server first (before tearing down UI state)
+    helix::RemoteControlServer::instance().stop();
+
+    // Stop memory monitor
     helix::MemoryMonitor::instance().stop();
 
     spdlog::info("[Application] Shutting down...");

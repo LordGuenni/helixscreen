@@ -145,7 +145,7 @@ endif
 .PHONY: tools moonraker-inspector validate-xml-constants validate-xml-attrs
 
 # Build all tools
-tools: moonraker-inspector validate-xml-constants validate-xml-attrs
+tools: moonraker-inspector validate-xml-constants validate-xml-attrs helixctl
 
 # Individual tool targets
 moonraker-inspector: $(MOONRAKER_INSPECTOR)

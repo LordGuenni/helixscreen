@@ -691,6 +691,7 @@ include mk/fonts.mk
 include mk/images.mk
 include mk/format.mk
 include mk/tools.mk
+include mk/helixctl.mk
 include mk/display-lib.mk
 include mk/splash.mk
 include mk/watchdog.mk

@@ -124,6 +124,10 @@ struct CliArgs {
     // Moonraker override (for testing/development)
     std::string moonraker_url; // --moonraker: override config URL (e.g., ws://192.168.1.112:7125)
 
+    // Remote control server
+    bool remote_control = false; // --remote: enable remote control server
+    std::string remote_socket;   // --remote-socket: override socket path
+
     /** @brief Check if any panels/overlays requiring Moonraker are requested */
     bool needs_moonraker_data() const {
         return overlays.needs_moonraker() || initial_panel >= 0;

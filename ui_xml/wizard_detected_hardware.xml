@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<!-- Copyright (C) 2025-2026 356C LLC -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component>
+  <!-- First-Run Wizard: Detected Hardware Summary -->
+  <!-- Shows auto-detected hardware: probe, AMS, LEDs, accelerometer -->
+  <consts>
+    <str name="step_title" value="Hardware Detected" value_tag="Hardware Detected"/>
+    <str name="step_subtitle"
+         value="We found the following add-ons on your printer"
+         value_tag="We found the following add-ons on your printer"/>
+    <int name="step_order" value="6"/>
+  </consts>
+
+  <subjects>
+    <!-- Probe section visibility and content -->
+    <subject name="hw_has_probe" type="int"/>
+    <subject name="hw_probe_name" type="string"/>
+    <subject name="hw_probe_type" type="string"/>
+    <!-- AMS section visibility and content -->
+    <subject name="hw_has_ams" type="int"/>
+    <subject name="hw_ams_name" type="string"/>
+    <subject name="hw_ams_details" type="string"/>
+    <!-- LED section (uses global printer_has_led from PrinterCapabilitiesState) -->
+    <subject name="printer_has_led" type="int"/>
+    <!-- Accelerometer section (uses global printer_has_accelerometer) -->
+    <subject name="printer_has_accelerometer" type="int"/>
+  </subjects>
+
+  <view name="wizard_detected_hardware_root"
+        extends="lv_obj" width="100%" height="100%" style_bg_opa="0" style_border_width="0" style_pad_all="0"
+        flex_flow="column" style_flex_main_place="start" style_flex_cross_place="center">
+
+    <!-- Scrollable card for hardware items -->
+    <ui_card width="100%"
+             flex_grow="1" style_radius="#border_radius" style_pad_all="#space_lg" style_pad_gap="#space_md"
+             flex_flow="column" style_flex_main_place="start" style_flex_cross_place="stretch" scrollable="true"
+             scroll_dir="vertical" style_max_height="100%">
+
+      <!-- === Probe Section === -->
+      <lv_obj width="100%"
+              style_bg_opa="0" style_border_width="0" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xs">
+        <bind_flag_if_eq subject="hw_has_probe" flag="hidden" ref_value="0"/>
+
+        <text_small text="BED PROBE"
+                    translation_tag="BED PROBE" style_text_color="#text_muted" style_text_letter_space="1"/>
+        <text_heading bind_text="hw_probe_name"/>
+        <text_muted bind_text="hw_probe_type"/>
+      </lv_obj>
+
+      <!-- Divider after probe (only if probe visible) -->
+      <divider_horizontal>
+        <bind_flag_if_eq subject="hw_has_probe" flag="hidden" ref_value="0"/>
+      </divider_horizontal>
+
+      <!-- === AMS Section === -->
+      <lv_obj width="100%"
+              style_bg_opa="0" style_border_width="0" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xs">
+        <bind_flag_if_eq subject="hw_has_ams" flag="hidden" ref_value="0"/>
+
+        <text_small text="FILAMENT SYSTEM"
+                    translation_tag="FILAMENT SYSTEM" style_text_color="#text_muted" style_text_letter_space="1"/>
+        <text_heading bind_text="hw_ams_name"/>
+        <text_muted bind_text="hw_ams_details"/>
+      </lv_obj>
+
+      <!-- Divider after AMS (only if AMS visible) -->
+      <divider_horizontal>
+        <bind_flag_if_eq subject="hw_has_ams" flag="hidden" ref_value="0"/>
+      </divider_horizontal>
+
+      <!-- === LED Section === -->
+      <lv_obj width="100%"
+              style_bg_opa="0" style_border_width="0" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xs">
+        <bind_flag_if_eq subject="printer_has_led" flag="hidden" ref_value="0"/>
+
+        <text_small text="LED LIGHTING"
+                    translation_tag="LED LIGHTING" style_text_color="#text_muted" style_text_letter_space="1"/>
+        <text_body text="LED strips detected" translation_tag="LED strips detected"/>
+      </lv_obj>
+
+      <!-- Divider after LEDs (only if LEDs visible) -->
+      <divider_horizontal>
+        <bind_flag_if_eq subject="printer_has_led" flag="hidden" ref_value="0"/>
+      </divider_horizontal>
+
+      <!-- === Accelerometer Section === -->
+      <lv_obj width="100%"
+              style_bg_opa="0" style_border_width="0" style_pad_all="0" flex_flow="column" style_pad_gap="#space_xs">
+        <bind_flag_if_eq subject="printer_has_accelerometer" flag="hidden" ref_value="0"/>
+
+        <text_small text="ACCELEROMETER"
+                    translation_tag="ACCELEROMETER" style_text_color="#text_muted" style_text_letter_space="1"/>
+        <text_body text="Input shaper sensor detected" translation_tag="Input shaper sensor detected"/>
+      </lv_obj>
+
+      <!-- Bottom spacer -->
+      <lv_obj width="1" flex_grow="1" style_bg_opa="0" style_border_width="0" style_min_height="1"/>
+
+      <!-- Integration message -->
+      <text_muted width="100%"
+                  style_text_align="center" text="These add-ons will be configured automatically."
+                  translation_tag="These add-ons will be configured automatically."/>
+
+    </ui_card>
+
+  </view>
+</component>

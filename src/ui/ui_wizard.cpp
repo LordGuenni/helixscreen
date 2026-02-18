@@ -7,8 +7,8 @@
 #include "ui_panel_home.h"
 #include "ui_subject_registry.h"
 #include "ui_utils.h"
-#include "ui_wizard_ams_identify.h"
 #include "ui_wizard_connection.h"
+#include "ui_wizard_detected_hardware.h"
 #include "ui_wizard_fan_select.h"
 #include "ui_wizard_filament_sensor_select.h"
 #include "ui_wizard_heater_select.h"
@@ -129,7 +129,7 @@ static const char* const STEP_COMPONENT_NAMES[] = {
     "wizard_printer_identify",       // 4
     "wizard_heater_select",          // 5
     "wizard_fan_select",             // 6
-    "wizard_ams_identify",           // 7 (may be skipped if no AMS)
+    "wizard_detected_hardware",      // 7 (may be skipped if no probe/AMS)
     "wizard_led_select",             // 8 (may be skipped if no LEDs)
     "wizard_filament_sensor_select", // 9 (may be skipped if <2 sensors)
     "wizard_probe_sensor_select",    // 10 (may be skipped if no unassigned sensors)
@@ -328,6 +328,7 @@ void ui_wizard_container_register_responsive_constants() {
         "wizard_heater_select",
         "wizard_fan_select",
         "wizard_ams_identify",
+        "wizard_detected_hardware",
         "wizard_led_select",
         "wizard_filament_sensor_select",
         "wizard_probe_sensor_select",
@@ -536,10 +537,10 @@ static void ui_wizard_precalculate_skips() {
 
     // Touch calibration (step 0) and language (step 1) are already handled at navigation time
 
-    // AMS skip (step 7)
-    if (!ams_step_skipped && get_wizard_ams_identify_step()->should_skip()) {
+    // Detected hardware skip (step 7)
+    if (!ams_step_skipped && get_wizard_detected_hardware_step()->should_skip()) {
         ams_step_skipped = true;
-        spdlog::debug("[Wizard] Pre-calculated: AMS step will be skipped");
+        spdlog::debug("[Wizard] Pre-calculated: Detected hardware step will be skipped");
     }
 
     // LED skip (step 8)
@@ -626,8 +627,8 @@ static void ui_wizard_cleanup_current_screen() {
     case 6: // Fan Select
         get_wizard_fan_select_step()->cleanup();
         break;
-    case 7: // AMS Identify
-        get_wizard_ams_identify_step()->cleanup();
+    case 7: // Detected Hardware
+        get_wizard_detected_hardware_step()->cleanup();
         break;
     case 8: // LED Select
         get_wizard_led_select_step()->cleanup();
@@ -748,11 +749,11 @@ static void ui_wizard_load_screen(int step) {
         lv_obj_update_layout(content);
         break;
 
-    case 7: // AMS Identify
-        spdlog::debug("[Wizard] Creating AMS identify screen");
-        get_wizard_ams_identify_step()->init_subjects();
-        get_wizard_ams_identify_step()->register_callbacks();
-        (void)get_wizard_ams_identify_step()->create(content);
+    case 7: // Detected Hardware
+        spdlog::debug("[Wizard] Creating detected hardware screen");
+        get_wizard_detected_hardware_step()->init_subjects();
+        get_wizard_detected_hardware_step()->register_callbacks();
+        (void)get_wizard_detected_hardware_step()->create(content);
         lv_obj_update_layout(content);
         break;
 
@@ -1072,11 +1073,11 @@ static void on_next_clicked(lv_event_t* e) {
         ui_wizard_precalculate_skips();
     }
 
-    // Skip AMS step (7) if no AMS detected
-    if (next_step == 7 && get_wizard_ams_identify_step()->should_skip()) {
+    // Skip detected hardware step (7) if no probe or AMS detected
+    if (next_step == 7 && get_wizard_detected_hardware_step()->should_skip()) {
         ams_step_skipped = true;
         next_step = 8;
-        spdlog::debug("[Wizard] Skipping AMS step (no AMS detected)");
+        spdlog::debug("[Wizard] Skipping detected hardware step (no probe/AMS)");
     }
 
     // Skip LED step (8) if no LEDs detected

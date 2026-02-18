@@ -379,6 +379,7 @@ void register_xml_components() {
     register_xml("wizard_heater_select.xml");
     register_xml("wizard_fan_select.xml");
     register_xml("wizard_ams_identify.xml");
+    register_xml("wizard_detected_hardware.xml");
     register_xml("wizard_led_select.xml");
     register_xml("wizard_filament_sensor_select.xml");
     register_xml("wizard_probe_sensor_select.xml");

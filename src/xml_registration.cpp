@@ -327,6 +327,9 @@ void register_xml_components() {
     register_xml("sensors_overlay.xml");
     // Probe type-specific panels (registered before probe_overlay)
     register_xml("probe_bltouch_panel.xml");
+    register_xml("probe_cartographer_panel.xml");
+    register_xml("probe_beacon_panel.xml");
+    register_xml("probe_generic_panel.xml");
     register_xml("probe_overlay.xml");
     register_xml("macro_buttons_overlay.xml");
     register_xml("hardware_issue_row.xml");

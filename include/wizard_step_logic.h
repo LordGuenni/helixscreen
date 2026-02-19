@@ -11,7 +11,6 @@ struct WizardSkipFlags {
     bool ams = false;
     bool led = false;
     bool filament = false;
-    bool probe = false;
     bool input_shaper = false;
 };
 

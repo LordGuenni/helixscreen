@@ -58,24 +58,23 @@ TEST_CASE("Platform override reset to -1 restores compile-time default", "[andro
 // Wizard Step Logic -- Total Steps
 // ============================================================================
 
-TEST_CASE("Wizard total steps with no skips is 13", "[android][wizard]") {
+TEST_CASE("Wizard total steps with no skips is 12", "[android][wizard]") {
     WizardSkipFlags no_skips{};
-    REQUIRE(wizard_calculate_display_total(no_skips) == 13);
+    REQUIRE(wizard_calculate_display_total(no_skips) == 12);
 }
 
-TEST_CASE("Wizard total steps with wifi skipped is 12", "[android][wizard]") {
+TEST_CASE("Wizard total steps with wifi skipped is 11", "[android][wizard]") {
     WizardSkipFlags skips{};
     skips.wifi = true;
-    REQUIRE(wizard_calculate_display_total(skips) == 12);
+    REQUIRE(wizard_calculate_display_total(skips) == 11);
 }
 
-TEST_CASE("Wizard total steps with wifi + touch_cal + language skipped is 10",
-          "[android][wizard]") {
+TEST_CASE("Wizard total steps with wifi + touch_cal + language skipped is 9", "[android][wizard]") {
     WizardSkipFlags skips{};
     skips.wifi = true;
     skips.touch_cal = true;
     skips.language = true;
-    REQUIRE(wizard_calculate_display_total(skips) == 10);
+    REQUIRE(wizard_calculate_display_total(skips) == 9);
 }
 
 // ============================================================================
@@ -99,11 +98,11 @@ TEST_CASE("Display step calculation with wifi skipped", "[android][wizard]") {
     REQUIRE(wizard_calculate_display_step(4, skips) == 4);
 }
 
-TEST_CASE("Display step at summary (step 12) with wifi skipped is 12", "[android][wizard]") {
+TEST_CASE("Display step at summary (step 11) with wifi skipped is 11", "[android][wizard]") {
     WizardSkipFlags skips{};
     skips.wifi = true;
-    // 12 steps before step 12, one skipped (wifi) -> 11 non-skipped + 1 = 12
-    REQUIRE(wizard_calculate_display_step(12, skips) == 12);
+    // 11 steps before step 11, one skipped (wifi) -> 10 non-skipped + 1 = 11
+    REQUIRE(wizard_calculate_display_step(11, skips) == 11);
 }
 
 // ============================================================================
@@ -135,7 +134,7 @@ TEST_CASE("Navigation forward skips all disabled steps correctly", "[android][wi
 
 TEST_CASE("wizard_next_step returns -1 at end", "[android][wizard]") {
     WizardSkipFlags no_skips{};
-    REQUIRE(wizard_next_step(12, no_skips) == -1);
+    REQUIRE(wizard_next_step(11, no_skips) == -1);
 }
 
 // ============================================================================
@@ -194,8 +193,8 @@ TEST_CASE("Multiple skips: wifi + ams + led, display_step at step 9", "[android]
     // Display step = 1 + 6 = 7
     REQUIRE(wizard_calculate_display_step(9, skips) == 7);
 
-    // Total: 13 - 3 = 10
-    REQUIRE(wizard_calculate_display_total(skips) == 10);
+    // Total: 12 - 3 = 9
+    REQUIRE(wizard_calculate_display_total(skips) == 9);
 }
 
 // ============================================================================
@@ -213,7 +212,7 @@ TEST_CASE("Android scenario: wifi skipped when platform is Android",
     android_skips.wifi = is_android_platform();
 
     REQUIRE(android_skips.wifi == true);
-    REQUIRE(wizard_calculate_display_total(android_skips) == 12);
+    REQUIRE(wizard_calculate_display_total(android_skips) == 11);
 
     // Step after language (1) should be connection (3), not wifi (2)
     REQUIRE(wizard_next_step(1, android_skips) == 3);

@@ -97,6 +97,8 @@ static lv_image_align_t image_align_to_enum(const char * txt)
     if(lv_streq("center", txt)) return LV_IMAGE_ALIGN_CENTER;
     if(lv_streq("stretch", txt)) return LV_IMAGE_ALIGN_STRETCH;
     if(lv_streq("tile", txt)) return LV_IMAGE_ALIGN_TILE;
+    if(lv_streq("contain", txt)) return LV_IMAGE_ALIGN_CONTAIN;
+    if(lv_streq("cover", txt)) return LV_IMAGE_ALIGN_COVER;
 
     LV_LOG_WARN("%s is an unknown value for image align", txt);
     return 0; /*Return 0 in lack of a better option. */

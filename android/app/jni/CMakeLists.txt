@@ -45,6 +45,10 @@ file(GLOB_RECURSE LVGL_SOURCES "${PROJECT_ROOT}/lib/lvgl/src/*.c")
 # Also include the C++ thorvg sources
 file(GLOB_RECURSE LVGL_CXX_SOURCES "${PROJECT_ROOT}/lib/lvgl/src/*.cpp")
 
+# Exclude XML and expat sources from LVGL — those are now in lib/helix-xml
+list(FILTER LVGL_SOURCES EXCLUDE REGEX ".*/xml/.*\\.c$")
+list(FILTER LVGL_SOURCES EXCLUDE REGEX ".*/libs/expat/.*\\.c$")
+
 add_library(lvgl STATIC ${LVGL_SOURCES} ${LVGL_CXX_SOURCES})
 target_include_directories(lvgl PUBLIC
     "${PROJECT_ROOT}"              # For lv_conf.h at project root
@@ -54,6 +58,29 @@ target_include_directories(lvgl PUBLIC
 target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE HELIX_DISPLAY_SDL)
 # LVGL's SDL driver needs SDL headers
 target_link_libraries(lvgl PUBLIC SDL2)
+
+# ============================================================================
+# Helix XML engine (extracted from LVGL, with our patches baked in)
+# ============================================================================
+set(HELIX_XML_DIR "${PROJECT_ROOT}/lib/helix-xml")
+file(GLOB HELIX_XML_SOURCES
+    "${HELIX_XML_DIR}/src/xml/*.c"
+    "${HELIX_XML_DIR}/src/xml/parsers/*.c"
+    "${HELIX_XML_DIR}/src/libs/expat/*.c"
+)
+add_library(helix_xml STATIC ${HELIX_XML_SOURCES})
+target_include_directories(helix_xml PUBLIC
+    "${HELIX_XML_DIR}"             # For helix_xml.h
+    "${HELIX_XML_DIR}/src"         # For xml/*.h internal headers
+)
+target_include_directories(helix_xml PRIVATE
+    "${PROJECT_ROOT}"              # For lv_conf.h
+    "${PROJECT_ROOT}/include"      # For lvgl_assert_handler.h
+    "${PROJECT_ROOT}/lib/lvgl"     # For lvgl.h
+    "${PROJECT_ROOT}/lib/lvgl/src" # For internal LVGL headers
+)
+target_compile_definitions(helix_xml PUBLIC LV_CONF_INCLUDE_SIMPLE)
+target_link_libraries(helix_xml PUBLIC lvgl)
 
 # ============================================================================
 # lv_markdown (static library)
@@ -114,6 +141,8 @@ target_include_directories(main PRIVATE
     "${PROJECT_ROOT}/lib/cpp-terminal/include"
     "${PROJECT_ROOT}/assets/fonts"
     "${PROJECT_ROOT}/src/generated"
+    "${PROJECT_ROOT}/lib/helix-xml"     # For helix_xml.h
+    "${PROJECT_ROOT}/lib/helix-xml/src" # For xml/*.h internal headers
 )
 
 # Read version from VERSION.txt
@@ -141,12 +170,19 @@ target_compile_options(main PRIVATE
     -Wno-unused-function
 )
 
+# Use the same precompiled header as the Makefile build — it force-includes
+# lvgl.h, helix_xml.h, spdlog, and common STL headers into every TU.
+target_precompile_headers(main PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:${PROJECT_ROOT}/include/lvgl_pch.h>"
+)
+
 # Link everything
 find_library(log-lib log)
 find_library(z-lib z)
 target_link_libraries(main
     SDL2
     lvgl
+    helix_xml
     lv_markdown
     hv_static
     tinygl

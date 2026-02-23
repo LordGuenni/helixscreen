@@ -5,6 +5,20 @@ All notable changes to HelixScreen will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-02-23
+
+### Added
+- Daily active devices and cumulative growth charts in analytics dashboard
+- Zstd compression for debug symbol uploads (~60% size reduction)
+
+### Fixed
+- XML `inner_align="contain"` and `inner_align="cover"` now work correctly — images were rendering at native size instead of scaling to fit their containers
+- Telemetry device counting uses unique devices instead of sessions for cumulative growth
+- Discord invite links updated across all documentation
+- Worktree setup script resolves main tree path correctly when run from inside a worktree
+- Android CMake build includes helix-xml library
+- GitHub release titles no longer show duplicate version numbers
+
 ## [0.12.0] - 2026-02-23
 
 A major infrastructure release — LVGL is upgraded to v9.5.0, and the XML layout engine has been extracted into its own library (`helix-xml`) for independent development. The Android port lands with initial build system and CI pipeline support. Developer experience improves with XML hot reload for live UI editing.
@@ -1017,6 +1031,7 @@ Initial tagged release. Foundation for all subsequent development.
 - Automated GitHub Actions release pipeline
 - One-liner installation script with platform auto-detection
 
+[0.12.1]: https://github.com/prestonbrown/helixscreen/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/prestonbrown/helixscreen/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/prestonbrown/helixscreen/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/prestonbrown/helixscreen/compare/v0.10.14...v0.11.0

@@ -250,7 +250,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-platforms, build-android]
+    needs: [build-platforms]
     permissions:
       contents: write  # Required to create releases
 
@@ -609,16 +609,19 @@ jobs:
             --content-type "text/plain"
         done
 
-        echo "=== Uploading debug info ==="
+        echo "=== Uploading debug info (zstd compressed) ==="
         for dbgfile in symbol-files/*.debug; do
           [ -f "$dbgfile" ] || continue
           filename=$(basename "$dbgfile")
           platform="${filename%.debug}"
-          echo "Uploading symbols/v${RELEASE_VERSION}/${platform}.debug..."
-          aws s3 cp "$dbgfile" \
-            "s3://${R2_BUCKET}/symbols/v${RELEASE_VERSION}/${platform}.debug" \
+          # Compress with zstd (~2.5x on DWARF data, saves ~60% storage)
+          echo "Compressing ${platform}.debug..."
+          zstd -9 --rm -q "$dbgfile"
+          echo "Uploading symbols/v${RELEASE_VERSION}/${platform}.debug.zst..."
+          aws s3 cp "${dbgfile}.zst" \
+            "s3://${R2_BUCKET}/symbols/v${RELEASE_VERSION}/${platform}.debug.zst" \
             --endpoint-url "$R2_ENDPOINT" \
-            --content-type "application/octet-stream"
+            --content-type "application/zstd"
         done
         echo "=== Symbol upload complete ==="
 

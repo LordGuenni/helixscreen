@@ -20,6 +20,25 @@ set -euo pipefail
 
 readonly CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/helixscreen/symbols"
 readonly R2_BASE_URL="${HELIX_R2_URL:-https://releases.helixscreen.org}/symbols"
+readonly CACHE_RETAIN_COUNT=10
+
+# Prune old cached symbol versions, keeping the most recent N by modification time
+prune_cache() {
+    [[ -d "$CACHE_DIR" ]] || return 0
+    local count
+    count=$(find "$CACHE_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$count" -gt "$CACHE_RETAIN_COUNT" ]]; then
+        local to_delete
+        to_delete=$(ls -1dt "$CACHE_DIR"/v*/ 2>/dev/null | tail -n +"$((CACHE_RETAIN_COUNT + 1))")
+        if [[ -n "$to_delete" ]]; then
+            echo "Pruning local cache (keeping $CACHE_RETAIN_COUNT most recent)..." >&2
+            echo "$to_delete" | while read -r dir; do
+                echo "  Removing $(basename "$dir")" >&2
+                rm -rf "$dir"
+            done
+        fi
+    fi
+}
 
 LOAD_BASE=0
 AUTO_DETECT_BASE=false
@@ -315,6 +334,7 @@ else
             exit 1
         fi
         echo "Cached: $SYM_FILE" >&2
+        prune_cache
     fi
 fi
 
@@ -597,18 +617,33 @@ find_addr2line() {
 }
 
 # Try to download .debug file from R2 (same location as .sym)
+# Debug files are stored compressed (.debug.zst) since v0.12.0
 DEBUG_FILE=""
 if [[ -z "${HELIX_SYM_FILE:-}" ]]; then
     DEBUG_FILE="${CACHE_DIR}/v${VERSION}/${PLATFORM}.debug"
     if [[ ! -f "$DEBUG_FILE" ]]; then
+        # Try compressed (.debug.zst) first, fall back to uncompressed (.debug)
+        DBG_ZST_URL="${R2_BASE_URL}/v${VERSION}/${PLATFORM}.debug.zst"
         DBG_URL="${R2_BASE_URL}/v${VERSION}/${PLATFORM}.debug"
         echo "Downloading debug info for v${VERSION}/${PLATFORM}..." >&2
-        if ! curl -fsSL -o "$DEBUG_FILE" "$DBG_URL" 2>/dev/null; then
-            echo "No .debug file available (nm-based resolution only)" >&2
-            rm -f "$DEBUG_FILE"
-            DEBUG_FILE=""
-        else
+        if curl -fsSL -o "${DEBUG_FILE}.zst" "$DBG_ZST_URL" 2>/dev/null; then
+            echo "Decompressing debug info..." >&2
+            if command -v zstd >/dev/null 2>&1; then
+                zstd -d --rm -q "${DEBUG_FILE}.zst"
+                echo "Cached: $DEBUG_FILE ($(du -h "$DEBUG_FILE" 2>/dev/null | cut -f1))" >&2
+            else
+                echo "Warning: zstd not installed, cannot decompress .debug.zst" >&2
+                echo "Install with: brew install zstd (macOS) or apt install zstd (Linux)" >&2
+                rm -f "${DEBUG_FILE}.zst"
+                DEBUG_FILE=""
+            fi
+        elif curl -fsSL -o "$DEBUG_FILE" "$DBG_URL" 2>/dev/null; then
+            # Legacy uncompressed format (pre-v0.12.0)
             echo "Cached: $DEBUG_FILE ($(du -h "$DEBUG_FILE" 2>/dev/null | cut -f1))" >&2
+        else
+            echo "No .debug file available (nm-based resolution only)" >&2
+            rm -f "$DEBUG_FILE" "${DEBUG_FILE}.zst"
+            DEBUG_FILE=""
         fi
     fi
 fi

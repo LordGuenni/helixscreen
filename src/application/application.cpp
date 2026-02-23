@@ -30,6 +30,7 @@
 #include "panel_factory.h"
 #include "print_history_manager.h"
 #include "screenshot.h"
+#include "slot_controller.h"
 #include "sound_manager.h"
 #include "static_panel_registry.h"
 #include "static_subject_registry.h"
@@ -996,6 +997,9 @@ bool Application::init_ui() {
     if (context_slot) {
         spdlog::info("[Application] Dual-panel layout detected (context_slot found)");
     }
+
+    // Initialize slot controller (manages context slot in dual-panel mode)
+    SlotController::instance().init(context_slot, primary_slot);
 
     // Initialize panels
     m_panels = std::make_unique<PanelFactory>();
@@ -2288,6 +2292,9 @@ void Application::shutdown() {
     set_moonraker_client(nullptr);
     set_print_history_manager(nullptr);
     set_temperature_history_manager(nullptr);
+
+    // Shutdown slot controller before navigation (releases observers)
+    SlotController::instance().shutdown();
 
     // Deactivate UI and clear navigation registries
     NavigationManager::instance().shutdown();

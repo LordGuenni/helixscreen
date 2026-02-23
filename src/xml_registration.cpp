@@ -211,6 +211,9 @@ void register_xml_components() {
     register_xml("form_field.xml");
     register_xml("ui_multiselect.xml");
 
+    // Layout components (content areas for panel management)
+    register_xml("components/content_layout.xml");
+
     // Beta feature indicators (badge before wrapper - dependency order)
     register_xml("beta_badge.xml");
     register_xml("beta_feature.xml");

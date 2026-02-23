@@ -95,8 +95,12 @@ if [[ -z "$BRANCH" ]]; then
         # We're in a worktree — infer branch and path
         BRANCH="$(git rev-parse --abbrev-ref HEAD)"
         WORKTREE_PATH="$CURRENT_ROOT"
+        # Override MAIN_TREE: SCRIPT_DIR/.. would resolve to the worktree root,
+        # not the actual main tree. Use git-common-dir to find the real main tree.
+        MAIN_TREE="$(cd "$GIT_COMMON/.." && pwd)"
         SETUP_ONLY=true
         echo -e "${YELLOW}Auto-detected worktree: $WORKTREE_PATH (branch: $BRANCH)${RESET}"
+        echo -e "${YELLOW}Main tree: $MAIN_TREE${RESET}"
     else
         echo -e "${RED}Error: branch-name is required (or run from inside a worktree)${RESET}"
         usage

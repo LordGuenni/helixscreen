@@ -64,6 +64,30 @@ TEST_CASE_METHOD(LVGLTestFixture, "SlotController reparenting", "[slot_controlle
         // Should not crash
     }
 
+    SECTION("show_in_context replaces previous context panel") {
+        auto* panel_a = lv_obj_create(primary_slot);
+        auto* panel_b = lv_obj_create(primary_slot);
+
+        sc.show_in_context(panel_a);
+        REQUIRE(lv_obj_get_parent(panel_a) == context_slot);
+
+        // Showing panel_b should return panel_a to primary_slot
+        sc.show_in_context(panel_b);
+        REQUIRE(lv_obj_get_parent(panel_b) == context_slot);
+        REQUIRE(lv_obj_get_parent(panel_a) == primary_slot);
+        REQUIRE(lv_obj_has_flag(panel_a, LV_OBJ_FLAG_HIDDEN));
+    }
+
+    SECTION("show_in_context with same panel is no-op") {
+        sc.show_in_context(test_panel);
+        REQUIRE(lv_obj_get_parent(test_panel) == context_slot);
+
+        // Showing same panel again should not crash or re-hide
+        sc.show_in_context(test_panel);
+        REQUIRE(lv_obj_get_parent(test_panel) == context_slot);
+        REQUIRE_FALSE(lv_obj_has_flag(test_panel, LV_OBJ_FLAG_HIDDEN));
+    }
+
     sc.shutdown();
 }
 

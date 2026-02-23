@@ -22,20 +22,21 @@ void SlotController::init(lv_obj_t* context_slot, lv_obj_t* primary_slot) {
 
     spdlog::info("[SlotController] Dual-panel mode active");
 
-    // Future: observe print phase to auto-populate context slot
-    // print_phase_observer_ = helix::ui::observe_int_sync<SlotController>(
-    //     PrinterState::instance().get_print_start_phase_subject(),
-    //     this,
-    //     [](SlotController* self, int phase) {
-    //         self->handle_print_phase_change(phase);
-    //     });
+    // Future: observe print phase to auto-populate context slot (Task 7 in plan)
 }
 
 void SlotController::show_in_context(lv_obj_t* panel) {
     if (!context_slot_ || !panel)
         return;
 
+    // If a different panel is already in context, return it first
+    if (current_context_panel_ && current_context_panel_ != panel) {
+        clear_context();
+    }
+
     // Reparent into context slot
+    // Imperative visibility is needed here because reparenting is structural —
+    // XML bindings can't express "show when in this parent"
     lv_obj_set_parent(panel, context_slot_);
     lv_obj_remove_flag(panel, LV_OBJ_FLAG_HIDDEN);
     current_context_panel_ = panel;

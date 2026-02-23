@@ -983,16 +983,23 @@ bool Application::init_ui() {
     // Wire navigation
     NavigationManager::instance().wire_events(navbar);
 
-    // Find panel container
-    lv_obj_t* panel_container = lv_obj_find_by_name(content_area, "panel_container");
-    if (!panel_container) {
-        spdlog::error("[Application] Failed to find panel_container");
+    // Find panel slot(s) inside content_layout
+    // Panels live in primary_slot (both single and dual layout modes)
+    lv_obj_t* primary_slot = lv_obj_find_by_name(content_area, "primary_slot");
+    if (!primary_slot) {
+        spdlog::error("[Application] Failed to find primary_slot in content_layout");
         return false;
+    }
+
+    // context_slot only exists in dual layouts (e.g., ultrawide)
+    lv_obj_t* context_slot = lv_obj_find_by_name(content_area, "context_slot");
+    if (context_slot) {
+        spdlog::info("[Application] Dual-panel layout detected (context_slot found)");
     }
 
     // Initialize panels
     m_panels = std::make_unique<PanelFactory>();
-    if (!m_panels->find_panels(panel_container)) {
+    if (!m_panels->find_panels(primary_slot)) {
         return false;
     }
     m_panels->setup_panels(m_screen);

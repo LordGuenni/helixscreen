@@ -10,22 +10,24 @@
     <!-- Content area (right side, grows to fill remaining space) -->
     <!-- Status icons moved to sidebar bottom - full height for panels -->
     <lv_obj name="content_area" height="100%" flex_grow="1" style_bg_opa="0%" style_pad_all="0" flex_flow="column">
-      <!-- Panel container (grows to fill remaining space) -->
-      <!-- All panels are stacked here, navigation controls visibility -->
-      <lv_obj name="panel_container" width="100%" flex_grow="1" style_bg_opa="0%" style_pad_all="0">
-        <!-- Panel 0: Home (visible by default) -->
-        <home_panel name="home_panel"/>
-        <!-- Panel 1: Print Select (hidden by default) -->
-        <print_select_panel name="print_select_panel"/>
-        <!-- Panel 2: Controls (hidden by default) -->
-        <controls_panel name="controls_panel"/>
-        <!-- Panel 3: Filament (hidden by default) -->
-        <filament_panel name="filament_panel"/>
-        <!-- Panel 4: Settings (hidden by default) -->
-        <settings_panel name="settings_panel"/>
-        <!-- Panel 5: Advanced (hidden by default) -->
-        <advanced_panel name="advanced_panel"/>
-      </lv_obj>
+      <!-- Content layout: single slot (standard) or dual slot (ultrawide) -->
+      <!-- LayoutManager::resolve_xml_path() selects the right variant -->
+      <content_layout name="content_layout" width="100%" flex_grow="1">
+        <content_layout-primary_slot>
+          <!-- Panel 0: Home (visible by default) -->
+          <home_panel name="home_panel"/>
+          <!-- Panel 1: Print Select (hidden by default) -->
+          <print_select_panel name="print_select_panel"/>
+          <!-- Panel 2: Controls (hidden by default) -->
+          <controls_panel name="controls_panel"/>
+          <!-- Panel 3: Filament (hidden by default) -->
+          <filament_panel name="filament_panel"/>
+          <!-- Panel 4: Settings (hidden by default) -->
+          <settings_panel name="settings_panel"/>
+          <!-- Panel 5: Advanced (hidden by default) -->
+          <advanced_panel name="advanced_panel"/>
+        </content_layout-primary_slot>
+      </content_layout>
     </lv_obj>
   </view>
 </component>

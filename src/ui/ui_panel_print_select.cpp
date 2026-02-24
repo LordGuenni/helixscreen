@@ -43,6 +43,7 @@
 #include "print_start_analyzer.h"
 #include "printer_state.h"
 #include "runtime_config.h"
+#include "slot_controller.h"
 #include "static_panel_registry.h"
 #include "theme_manager.h"
 #include "thumbnail_cache.h"
@@ -1976,6 +1977,12 @@ void PrintSelectPanel::create_detail_view() {
     print_controller_->set_show_detail_view([this]() { show_detail_view(); });
     print_controller_->set_navigate_to_print_status([this]() {
         if (print_status_panel_widget_) {
+            // In dual-panel mode, show print status in context slot immediately
+            // (don't wait for the print state observer — it fires later)
+            if (SlotController::instance().is_dual_mode()) {
+                SlotController::instance().show_print_status();
+                return;
+            }
             NavigationManager::instance().register_overlay_instance(
                 print_status_panel_widget_, &get_global_print_status_panel());
             NavigationManager::instance().push_overlay(print_status_panel_widget_);

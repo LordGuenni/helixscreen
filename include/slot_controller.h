@@ -7,6 +7,8 @@
 
 #include "lvgl/lvgl.h"
 
+class IPanelLifecycle;
+
 /**
  * @brief Manages the context (left) slot in dual-panel ultrawide layout.
  *
@@ -40,6 +42,27 @@ class SlotController {
     }
 
     /**
+     * @brief Register the print status widget for automatic context slot management.
+     *
+     * In dual mode, SlotController observes print state and reparents this widget
+     * into the context slot when a print is active (PRINTING/PAUSED), and returns
+     * it to its original parent when idle.
+     *
+     * @param widget The print status panel root widget
+     * @param lifecycle Optional lifecycle interface for on_activate/on_deactivate calls
+     */
+    void set_print_status_widget(lv_obj_t* widget, IPanelLifecycle* lifecycle = nullptr);
+
+    /**
+     * @brief Immediately show print status in the context slot.
+     *
+     * Call this when a print is initiated (before the observer fires).
+     * Handles reparenting, sizing, visibility, and lifecycle activation.
+     * No-op if not in dual mode or no print status widget registered.
+     */
+    void show_print_status();
+
+    /**
      * @brief Move a panel widget into the context slot.
      * Uses lv_obj_set_parent() to reparent. Shows the panel (removes HIDDEN flag).
      * No-op if not in dual mode or panel is null.
@@ -47,8 +70,8 @@ class SlotController {
     void show_in_context(lv_obj_t* panel);
 
     /**
-     * @brief Return context panel to primary slot and clear context.
-     * Hides the panel (adds HIDDEN flag) and reparents to primary_slot.
+     * @brief Return context panel to its original parent and clear context.
+     * Hides the panel (adds HIDDEN flag) and reparents back.
      * No-op if nothing is in the context slot.
      */
     void clear_context();
@@ -61,9 +84,25 @@ class SlotController {
   private:
     SlotController() = default;
 
+    /// Handle print state changes to auto-populate context slot
+    void on_print_state_changed(int state);
+
+    /// Reparent print status widget into context slot with proper sizing
+    void move_print_status_to_context();
+
+    /// Return print status widget to its overlay parent with original sizing
+    void return_print_status_to_overlay();
+
     lv_obj_t* context_slot_ = nullptr;
     lv_obj_t* primary_slot_ = nullptr;
     lv_obj_t* current_context_panel_ = nullptr;
 
-    ObserverGuard print_phase_observer_;
+    // Print status widget management
+    lv_obj_t* print_status_widget_ = nullptr;
+    lv_obj_t* print_status_original_parent_ = nullptr;
+    lv_coord_t print_status_original_width_ = 0;
+    IPanelLifecycle* print_status_lifecycle_ = nullptr;
+    bool print_status_in_context_ = false;
+
+    ObserverGuard print_state_observer_;
 };

@@ -1015,6 +1015,13 @@ bool Application::init_ui() {
     }
     m_overlay_panels.print_status = m_panels->print_status_panel();
 
+    // In dual-panel mode, register print status widget with SlotController
+    // so it can be reparented into the context slot during prints
+    if (SlotController::instance().is_dual_mode() && m_overlay_panels.print_status) {
+        SlotController::instance().set_print_status_widget(m_overlay_panels.print_status,
+                                                           &get_global_print_status_panel());
+    }
+
     // Initialize keypad
     m_panels->init_keypad(m_screen);
 

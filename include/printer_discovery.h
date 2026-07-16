@@ -272,6 +272,9 @@ class PrinterDiscovery {
             } else if (name == "AFC") {
                 has_mmu_ = true;
                 mmu_type_ = AmsType::AFC;
+            } else if (name == "mms") {
+                has_mmu_ = true;
+                mmu_type_ = AmsType::BTT_VIVID;
             }
             // CFS detection (Creality Filament System).
             //

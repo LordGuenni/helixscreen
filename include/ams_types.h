@@ -46,7 +46,8 @@ enum class AmsType {
     AD5X_IFS = 5,     ///< FlashForge AD5X IFS (Intelligent Filament Switching)
     CFS = 6,          ///< Creality Filament System (K2 series, RS-485)
     SNAPMAKER = 7,    ///< Snapmaker U1 SnapSwap toolchanger
-    QIDI_BOX = 8 ///< QIDI Box filament changer (PLUS4, Q2, MAX4 — hub AMS, 4 slots chainable to 16)
+    QIDI_BOX = 8,     ///< QIDI Box filament changer (PLUS4, Q2, MAX4 — hub AMS, 4 slots chainable to 16)
+    BTT_VIVID = 9     ///< BTT Vivid (mms object in Moonraker)
 };
 
 /**
@@ -72,6 +73,8 @@ inline const char* ams_type_to_string(AmsType type) {
         return "Snapmaker";
     case AmsType::QIDI_BOX:
         return "QIDI Box"; // i18n: do not translate - product name
+    case AmsType::BTT_VIVID:
+        return "BTT Vivid";
     default:
         return "None";
     }
@@ -84,33 +87,35 @@ inline const char* ams_type_to_string(AmsType type) {
  */
 inline AmsType ams_type_from_string(std::string_view str) {
     // Simple comparison - backends will use their own detection
-    if (str == "mmu" || str == "happy_hare" || str == "Happy Hare") {
+    std::string type_str(str);
+    std::transform(type_str.begin(), type_str.end(), type_str.begin(), ::tolower);
+
+    if (type_str == "mmu" || type_str == "happy_hare" || type_str == "happy hare") {
         return AmsType::HAPPY_HARE;
     }
-    if (str == "afc" || str == "AFC") {
+    if (type_str == "afc") {
         return AmsType::AFC;
     }
-    if (str == "valgace" || str == "ValgACE" || str == "bunnyace" || str == "BunnyACE" ||
-        str == "duckace" || str == "DuckACE" || str == "ace" || str == "ACE Pro") {
+    if (type_str == "valgace" || type_str == "bunnyace" || type_str == "duckace" || type_str == "ace" || type_str == "ace pro") {
         return AmsType::ACE;
     }
-    if (str == "toolchanger" || str == "tool_changer" || str == "Tool Changer") {
+    if (type_str == "toolchanger" || type_str == "tool_changer") {
         return AmsType::TOOL_CHANGER;
     }
-    if (str == "ad5x_ifs" || str == "ad5x ifs" || str == "ad5x" || str == "ifs") {
+    if (type_str == "ad5x_ifs" || type_str == "ad5x ifs" || type_str == "ad5x" || type_str == "ifs") {
         return AmsType::AD5X_IFS;
     }
-    if (str == "cfs" || str == "CFS" || str == "box") {
+    if (type_str == "cfs" || type_str == "box") {
         return AmsType::CFS;
     }
-    if (str == "snapmaker" || str == "Snapmaker" || str == "snapswap" || str == "SnapSwap") {
+    if (type_str == "snapmaker" || type_str == "snapswap") {
         return AmsType::SNAPMAKER;
     }
-    // QIDI Box: QIDI's 4-slot hub-style filament changer (PLUS4 / Q2 / MAX4).
-    // Note: the bare "box" alias is already claimed by CFS above, so QIDI Box
-    // requires the explicit "qidi_box" / "QIDI Box" spelling.
-    if (str == "qidi_box" || str == "QIDI Box" || str == "qidibox") {
+    if (type_str == "qidi_box" || type_str == "qidi box" || type_str == "qidibox") {
         return AmsType::QIDI_BOX;
+    }
+    if (type_str == "btt_vivid" || type_str == "btt vivid" || type_str == "vivid" || type_str == "mms") {
+        return AmsType::BTT_VIVID;
     }
     return AmsType::NONE;
 }
@@ -143,7 +148,7 @@ inline bool is_tool_changer(AmsType type) {
 inline bool is_filament_system(AmsType type) {
     return type == AmsType::HAPPY_HARE || type == AmsType::AFC || type == AmsType::ACE ||
            type == AmsType::AD5X_IFS || type == AmsType::CFS || type == AmsType::SNAPMAKER ||
-           type == AmsType::QIDI_BOX;
+           type == AmsType::QIDI_BOX || type == AmsType::BTT_VIVID;
 }
 
 /**

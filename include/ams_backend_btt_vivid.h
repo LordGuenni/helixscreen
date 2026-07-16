@@ -46,8 +46,8 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     // Recovery
     AmsError recover() override;
     AmsError reset() override;
-    AmsError reset_lane(int slot_index) override { return AmsError{AmsError::NOT_SUPPORTED}; }
-    AmsError eject_lane(int slot_index) override { return AmsError{AmsError::NOT_SUPPORTED}; }
+    AmsError reset_lane(int /*slot_index*/) override { return AmsErrorHelper::not_supported("Per-lane reset"); }
+    AmsError eject_lane(int /*slot_index*/) override { return AmsErrorHelper::not_supported("Lane eject"); }
     AmsError cancel() override;
 
     // Configuration
@@ -55,11 +55,11 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     AmsError set_tool_mapping(int tool_number, int slot_index) override;
 
     [[nodiscard]] bool is_bypass_active() const override { return false; }
-    AmsError enable_bypass() override { return AmsError{AmsError::NOT_SUPPORTED}; }
-    AmsError disable_bypass() override { return AmsError{AmsError::NOT_SUPPORTED}; }
+    AmsError enable_bypass() override { return AmsErrorHelper::not_supported("Bypass mode"); }
+    AmsError disable_bypass() override { return AmsErrorHelper::not_supported("Bypass mode"); }
 
     [[nodiscard]] RemapStrategy get_remap_strategy() const override {
-        return RemapStrategy::FirmwareProvided;
+        return RemapStrategy::Native;
     }
 
     [[nodiscard]] std::vector<int> get_tool_mapping() const override;

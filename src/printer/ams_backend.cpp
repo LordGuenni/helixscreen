@@ -469,7 +469,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
             return nullptr;
         }
         spdlog::debug("[AMS Backend] Creating QIDI Box backend");
-        return std::make_unique<AmsBackendQidiBox>(api, client);
+        return std::make_unique<AmsBackendQidi>(api, client);
 
     case AmsType::BTT_VIVID:
         if (!api || !client) {
@@ -485,4 +485,3 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
         return nullptr;
     }
 }
-} // namespace helix

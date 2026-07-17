@@ -7,7 +7,7 @@
 #include "printer_hardware.h"
 #include "btt_vivid_defaults.h"
 
-#include <fmt/format.h>
+#include <spdlog/fmt/fmt.h>
 #include <spdlog/spdlog.h>
 
 using namespace helix;

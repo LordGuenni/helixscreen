@@ -51,6 +51,22 @@
 
 **Operators:** `bind_flag_if_eq`, `_not_eq`, `_gt`, `_ge`, `_lt`, `_le` (same for `bind_state_if_*` and `bind_style_if_*`)
 
+### Compound Conditions (`<subject_expr>`, `cond=`)
+
+For conditions spanning 2+ subjects (`a or b gt c`), use the expression evaluator instead of a hand-written C++ derived subject.
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<subject_expr name= expr=>` | Sibling of `<subject>`/`<int>` in `<subjects>`; derived int subject that recomputes when any referenced subject changes. Inputs must be declared earlier in the block (or globally). |
+| `cond="EXPR"` | Inline on `<bind_flag_if>`, `<bind_state_if>`, `<bind_style_if>` — same attrs as the `_eq`/`_gt`/etc. forms (`flag`/`state`/`name`, `invert`) but `cond` replaces `subject`+`ref_value`. |
+
+Grammar: comparison `eq ne lt le gt ge` (`== != < <= > >=`), boolean `and or not` (`&& \|\| !`), arithmetic `+ - * / %` (div/mod-by-zero → `0`). **Word forms are house style** — `&&`/`<` need `&amp;&amp;`/`&lt;` XML escaping.
+
+```xml
+<subject_expr name="demo_alarm" expr="demo_error or demo_temp gt demo_threshold"/>
+<bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>
+```
+
 ### Parse-Time Conditional Hidden
 
 | Attribute | Behavior |
@@ -60,6 +76,20 @@
 | `hidden_if_prop_not_eq="$prop\|ref_value"` | Hides if prop does NOT equal ref_value |
 
 These evaluate once at parse time — not reactive. For runtime visibility, use `bind_flag_if_*`.
+
+### Repeating (`<repeat>`)
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<repeat count=>` | Expands its body `count` times. `count` is a literal, a `#const`, or a subject name; a subject-bound `count` **reactively rebuilds** on change (async off-tree teardown). Clamped to `[0, 256]`. Not nestable yet. Reactive `<repeat>` must be its parent's last child or in its own container. |
+| `$i` / `${…}` | Zero-based iteration index inside a `<repeat>` body. Bare `$i` is whole-value only (`text="$i"`); `${i}` / `${prop}` splices a name (`bind_text="slot_${i}_label"`). `${…}` also evaluates an **integer expression** and splices the result: `${i + 1}`, `${i * 84}`, `${base * scale}`, `${cols * 2}` (operands: `i`, literals, numeric props, subjects). **Resolve-once** — subject operands read at creation, not reactive; use `bind_*` for live values. |
+
+### Structural Conditionals (`<if>` / `<else>`)
+
+| Tag/Attr | Notes |
+|----------|-------|
+| `<if cond=>` | `cond` is an expression string, same word-form grammar as `cond=` on `bind_flag_if`/`<subject_expr>`. Creates only the matching branch — no subjects referenced = static, expands once at load, no observer; subjects referenced = reactive, rebuilds on any operand change. Reactive `<if>` must be its parent's last child or in its own container. Not nestable yet. |
+| `<else>` | No attributes. Inline divider inside one `<if>…</if>`: everything before it is the true-body, everything after is the false-body. `<else/>` and `<else></else>` are identical. Optional — omitting it means "create nothing" for the false case. Second `<else/>` warns (first split wins); stray `<else/>` outside any `<if>` warns and is ignored. |
 
 ## Style Attributes (style_* prefix)
 

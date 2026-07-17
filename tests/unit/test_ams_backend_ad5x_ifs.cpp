@@ -308,22 +308,41 @@ class Ad5xIfsTestAccess {
     // `slot_has_filament` defaults to true so existing call sites that just
     // want to drive the baseline-update path don't need to think about
     // presence semantics.
-    static void check_external_color_change(AmsBackendAd5xIfs& b, int slot_index,
+    static bool check_external_color_change(AmsBackendAd5xIfs& b, int slot_index,
                                             uint32_t observed_color,
                                             bool slot_has_filament = true) {
         std::lock_guard<std::mutex> lock(b.mutex_);
-        b.check_external_color_change(slot_index, std::optional<uint32_t>{observed_color},
-                                      slot_has_filament);
+        return b.check_external_color_change(slot_index, std::optional<uint32_t>{observed_color},
+                                             slot_has_filament);
     }
-    static void check_external_color_change(AmsBackendAd5xIfs& b, int slot_index, std::nullopt_t,
+    static bool check_external_color_change(AmsBackendAd5xIfs& b, int slot_index, std::nullopt_t,
                                             bool slot_has_filament = true) {
         std::lock_guard<std::mutex> lock(b.mutex_);
-        b.check_external_color_change(slot_index, std::nullopt, slot_has_filament);
+        return b.check_external_color_change(slot_index, std::nullopt, slot_has_filament);
+    }
+    // Type-change counterpart. observed_color is passed through so the helper's
+    // "no color reading yet -> defer sync" branch can be exercised; defaults to
+    // a present reading matching the common case.
+    static bool check_external_type_change(AmsBackendAd5xIfs& b, int slot_index,
+                                           const std::string& observed_material,
+                                           bool slot_has_filament = true,
+                                           std::optional<uint32_t> observed_color = 0x808080u) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        return b.check_external_type_change(slot_index, observed_material, observed_color,
+                                            slot_has_filament);
     }
     static std::optional<uint32_t> last_firmware_color(const AmsBackendAd5xIfs& b, int slot_index) {
         std::lock_guard<std::mutex> lock(b.mutex_);
         auto it = b.last_firmware_color_.find(slot_index);
         if (it == b.last_firmware_color_.end())
+            return std::nullopt;
+        return it->second;
+    }
+    static std::optional<std::string> last_firmware_material(const AmsBackendAd5xIfs& b,
+                                                             int slot_index) {
+        std::lock_guard<std::mutex> lock(b.mutex_);
+        auto it = b.last_firmware_material_.find(slot_index);
+        if (it == b.last_firmware_material_.end())
             return std::nullopt;
         return it->second;
     }
@@ -508,6 +527,19 @@ static json standard_variables() {
 // shape that parse_save_variables used to populate. Use after constructing a
 // backend to give tests a deterministic firmware-truth baseline.
 static void seed_standard_colors(AmsBackendAd5xIfs& b) {
+    // Presence FIRST, then color/material — mirroring the real atomic parse
+    // (apply_zcolor_result fills presence + color + material together, so the
+    // detectors' first observation of a slot always sees it present). Setting
+    // material while the slot still reads absent would create an artificial
+    // "material-before-presence" window that the real path never produces: with
+    // the #1065 presence-lag baseline-hold, that window turns the later presence
+    // flip into a "" -> MATERIAL insert delta and fabricates an auto-mirror
+    // override. Presence-first keeps the post-seed state override-free, matching
+    // production and every test written against this helper.
+    Ad5xIfsTestAccess::set_port_presence(b, 0, true);
+    Ad5xIfsTestAccess::set_port_presence(b, 1, true);
+    Ad5xIfsTestAccess::set_port_presence(b, 2, true);
+    Ad5xIfsTestAccess::set_port_presence(b, 3, true);
     Ad5xIfsTestAccess::set_color(b, 0, "FF0000");
     Ad5xIfsTestAccess::set_color(b, 1, "00FF00");
     Ad5xIfsTestAccess::set_color(b, 2, "0000FF");
@@ -516,10 +548,6 @@ static void seed_standard_colors(AmsBackendAd5xIfs& b) {
     Ad5xIfsTestAccess::set_material(b, 1, "PETG");
     Ad5xIfsTestAccess::set_material(b, 2, "ABS");
     Ad5xIfsTestAccess::set_material(b, 3, "TPU");
-    Ad5xIfsTestAccess::set_port_presence(b, 0, true);
-    Ad5xIfsTestAccess::set_port_presence(b, 1, true);
-    Ad5xIfsTestAccess::set_port_presence(b, 2, true);
-    Ad5xIfsTestAccess::set_port_presence(b, 3, true);
 }
 
 // ==========================================================================
@@ -2439,6 +2467,177 @@ TEST_CASE("AD5X IFS: a lane going empty keeps its Spoolman link (AFC/HH parity)"
     CHECK(Ad5xIfsTestAccess::get_override(backend, 0).has_value());
 }
 
+// #1065: a physical insert must refresh material/color from firmware truth on a
+// lane whose override is auto-tracked (no Spoolman binding) even though the
+// override's fields were user-locked (by a menu type-set, or by the pessimistic
+// !material.empty() load default). A physical insert emits no CHANGE_ZCOLOR, so
+// the #981 external-edit clear never fires — the insert edge itself must unlock.
+TEST_CASE("AD5X IFS: physical insert refreshes material/color on an auto-tracked lane (#1065)",
+          "[ams][ad5x][ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+    REQUIRE_FALSE(Ad5xIfsTestAccess::has_per_port_sensors(backend));
+
+    // Slot 0 loaded with PETG / red, establishing firmware baseline.
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.slots[0] = AmsBackendAd5xIfs::ZColorSlot{"PETG", "FF0000"};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+    REQUIRE(Ad5xIfsTestAccess::port_presence(backend, 0));
+
+    // User set the type via the menu: material + color locked, NO Spoolman link.
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PETG";
+    ovr.user_locked_material = true;
+    ovr.color_rgb = 0xFF0000;
+    ovr.color_set = true;
+    ovr.user_locked_color = true;
+    ovr.spoolman_id = 0; // auto-tracked, not a deliberate binding
+    Ad5xIfsTestAccess::seed_override(backend, 0, ovr);
+
+    // Eject (lane goes empty).
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+    REQUIRE_FALSE(Ad5xIfsTestAccess::port_presence(backend, 0));
+
+    // Insert a DIFFERENT spool: firmware now reports PLA / green.
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.slots[0] = AmsBackendAd5xIfs::ZColorSlot{"PLA", "00FF00"};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+    REQUIRE(Ad5xIfsTestAccess::port_presence(backend, 0));
+
+    // The new spool's material AND color surface — not the stale locked PETG/red.
+    SlotInfo info = backend.get_slot_info(0);
+    CHECK(info.material == "PLA");
+    CHECK(info.color_rgb == 0x00FF00);
+    // The locks were dropped so the auto-mirror could refresh.
+    auto staged = Ad5xIfsTestAccess::get_override(backend, 0);
+    REQUIRE(staged.has_value());
+    CHECK_FALSE(staged->user_locked_material);
+    CHECK_FALSE(staged->user_locked_color);
+    CHECK(staged->material == "PLA");
+}
+
+// Counterpart to the above: a lane with a REAL Spoolman binding is a deliberate
+// identity the user attached. #1071 retains it across an eject/insert cycle, so
+// the insert edge must NOT unlock it — the bound spool's material/color stick.
+TEST_CASE("AD5X IFS: physical insert does NOT unlock a Spoolman-bound lane (#1065/#1071)",
+          "[ams][ad5x][ifs][1065][1071]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.slots[0] = AmsBackendAd5xIfs::ZColorSlot{"PETG", "FF0000"};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+
+    helix::ams::FilamentSlotOverride ovr;
+    ovr.material = "PETG";
+    ovr.user_locked_material = true;
+    ovr.color_rgb = 0xFF0000;
+    ovr.color_set = true;
+    ovr.user_locked_color = true;
+    ovr.spoolman_id = 42; // deliberate binding
+    ovr.brand = "Polymaker";
+    Ad5xIfsTestAccess::seed_override(backend, 0, ovr);
+
+    // Eject then insert a physically different spool (firmware reports PLA).
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+    {
+        AmsBackendAd5xIfs::ZColorSilentResult r;
+        r.saw_valid_response = true;
+        r.slots[0] = AmsBackendAd5xIfs::ZColorSlot{"PLA", "00FF00"};
+        Ad5xIfsTestAccess::apply_zcolor_result(backend, r);
+    }
+
+    // The binding — and the material/color it carries — is retained (#1071).
+    SlotInfo info = backend.get_slot_info(0);
+    CHECK(info.spoolman_id == 42);
+    CHECK(info.material == "PETG");
+    auto staged = Ad5xIfsTestAccess::get_override(backend, 0);
+    REQUIRE(staged.has_value());
+    CHECK(staged->user_locked_material);
+    CHECK(staged->material == "PETG");
+}
+
+// #1065 Fix B: on modern ZMOD the firmware material can surface one parse frame
+// BEFORE IFS_STATUS Ports flips the slot present. The type detector must HOLD
+// the baseline while the slot reads not-present, so the delta survives until a
+// present-lane frame and the sync fires — instead of advancing the baseline and
+// swallowing the change (color updated on screen, material stuck).
+TEST_CASE("AD5X IFS: type detector holds baseline through presence lag on insert (#1065)",
+          "[ams][ad5x][ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    // Establish a present-lane baseline of PETG.
+    REQUIRE_FALSE(Ad5xIfsTestAccess::check_external_type_change(backend, 0, "PETG",
+                                                                /*slot_has_filament=*/true));
+    REQUIRE(Ad5xIfsTestAccess::last_firmware_material(backend, 0) == "PETG");
+
+    // Presence-lag frame: firmware says PLA but the slot still reads not-present.
+    // No sync, and — crucially — the baseline is HELD at PETG, not advanced.
+    CHECK_FALSE(Ad5xIfsTestAccess::check_external_type_change(backend, 0, "PLA",
+                                                              /*slot_has_filament=*/false));
+    CHECK(Ad5xIfsTestAccess::last_firmware_material(backend, 0) == "PETG");
+
+    // Presence catches up: the held PETG->PLA delta is still detectable, so the
+    // sync fires (returns true). Without the hold, the baseline would already be
+    // PLA and this would return false — the swallow.
+    CHECK(Ad5xIfsTestAccess::check_external_type_change(backend, 0, "PLA",
+                                                        /*slot_has_filament=*/true));
+}
+
+// #1065 Fix B, color counterpart: same presence-lag hold for the color detector.
+TEST_CASE("AD5X IFS: color detector holds baseline through presence lag on insert (#1065)",
+          "[ams][ad5x][ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::check_external_color_change(backend, 0, 0xFF0000,
+                                                                 /*slot_has_filament=*/true));
+    REQUIRE(Ad5xIfsTestAccess::last_firmware_color(backend, 0) == 0xFF0000u);
+
+    CHECK_FALSE(Ad5xIfsTestAccess::check_external_color_change(backend, 0, 0x00FF00,
+                                                               /*slot_has_filament=*/false));
+    CHECK(Ad5xIfsTestAccess::last_firmware_color(backend, 0) == 0xFF0000u); // baseline held
+
+    CHECK(Ad5xIfsTestAccess::check_external_color_change(backend, 0, 0x00FF00,
+                                                         /*slot_has_filament=*/true)); // now syncs
+}
+
+// #1065 Fix B must NOT regress the da7d0b1a6 eject-baseline behavior: an EMPTY
+// material on an empty lane (eject) still advances the baseline to "" so the
+// following insert is a genuine "" -> MATERIAL delta.
+TEST_CASE("AD5X IFS: eject still baselines material to empty so insert re-detects (#1065)",
+          "[ams][ad5x][ifs][1065]") {
+    AmsBackendAd5xIfs backend(nullptr, nullptr);
+
+    REQUIRE_FALSE(Ad5xIfsTestAccess::check_external_type_change(backend, 0, "PETG",
+                                                                /*slot_has_filament=*/true));
+
+    // Eject: empty material, slot empty, a color reading present (the #808080
+    // placeholder). Baseline advances to "".
+    CHECK_FALSE(Ad5xIfsTestAccess::check_external_type_change(backend, 0, "",
+                                                              /*slot_has_filament=*/false,
+                                                              /*observed_color=*/0x808080u));
+    CHECK(Ad5xIfsTestAccess::last_firmware_material(backend, 0) == "");
+
+    // Insert: "" -> PLA is a real delta on a present lane, so the sync fires.
+    CHECK(Ad5xIfsTestAccess::check_external_type_change(backend, 0, "PLA",
+                                                        /*slot_has_filament=*/true));
+}
+
 // NOTE: tests previously here exercised parse_save_variables's color/type
 // reads from <prefix>_colors / <prefix>_types — including the dirty-flag
 // round-trip and port_presence inference from color emptiness. Those code
@@ -4336,7 +4535,7 @@ TEST_CASE("AD5X IFS set_slot_info takes effect when no override present",
 // ==========================================================================
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) stores override in memory and store",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Build a real MoonrakerAPIMock so the backend's override store has a
     // destination to write to. on_started() is not called — overrides_
     // starts empty — so we can assert the persist path populates it.
@@ -4393,7 +4592,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) stores override in memory and st
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=false) does NOT write to store",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Same fixture as above, but with persist=false the override store
     // must stay untouched — set_slot_info is a pure in-memory preview.
     Ad5xIfsTmpCacheDir tmp("task10_no_persist");
@@ -4438,7 +4637,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=false) does NOT write to store",
 // ==========================================================================
 
 TEST_CASE("AD5X IFS update_slot_weight preserves identity and does not write Adventurer5M.json",
-          "[ams][ad5x_ifs][filament_slot_override][981][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override][981]") {
     Ad5xIfsTmpCacheDir tmp("weight_only_preserves_identity");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -4492,7 +4691,7 @@ TEST_CASE("AD5X IFS update_slot_weight preserves identity and does not write Adv
 }
 
 TEST_CASE("AD5X IFS update_slot_weight on an un-overridden slot does not lock identity",
-          "[ams][ad5x_ifs][filament_slot_override][981][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override][981]") {
     Ad5xIfsTmpCacheDir tmp("weight_only_no_lock");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -4528,7 +4727,7 @@ TEST_CASE("AD5X IFS update_slot_weight on an un-overridden slot does not lock id
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) survives a matching firmware parse",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // After a persist=true write, the user's color/material round-trip through
     // Adventurer5M.json — so the next firmware parse reports the SAME values
     // and apply_overrides re-lays the brand/spool_name/etc. metadata that
@@ -4574,7 +4773,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) survives a matching firmware par
 }
 
 TEST_CASE("AD5X IFS user-edited slot survives firmware FFMInfo revert (#965 regression)",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // #965: AD5X firmware re-emits the previously-loaded material into
     // Adventurer5M.json shortly after print completion (and on some
     // restart paths). Pre-fix, the OverwriteAlways auto-mirror would clobber
@@ -4650,7 +4849,7 @@ TEST_CASE("AD5X IFS user-edited slot survives firmware FFMInfo revert (#965 regr
 }
 
 TEST_CASE("AD5X IFS auto-mirror still tracks firmware for slots with no user lock",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Companion to the #965 regression: bootstrap (no override, or override
     // with locks=false) MUST still pick up genuine external edits so
     // OrcaSlicer's MoonrakerPrinterAgent stays in sync with the printer.
@@ -4709,7 +4908,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) with no store still updates in-m
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) with pre-existing override replaces it",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Seed an old override (simulating a prior load from disk), then overwrite
     // it via set_slot_info. get_slot_info must reflect the NEW values
     // immediately, not the old staged override.
@@ -4766,7 +4965,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) with pre-existing override repla
 // ==========================================================================
 
 TEST_CASE("AD5X IFS external color change syncs lane_data, preserves brand metadata",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("ext_color_change_syncs");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -4849,7 +5048,7 @@ TEST_CASE("AD5X IFS external color change syncs lane_data, preserves brand metad
 }
 
 TEST_CASE("AD5X IFS external color change with no override creates minimal lane_data record",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // When zmod owns slot color/material truth and the user has never touched
     // the slot via Helix, lane_data was previously empty → Orca had no way to
     // see the slot's color from MoonrakerPrinterAgent. Now we publish a
@@ -4904,7 +5103,7 @@ TEST_CASE("AD5X IFS external color change with no override creates minimal lane_
 }
 
 TEST_CASE("AD5X IFS GET_ZCOLOR eject keeps the override and lane_data (#1071)",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Genuine spool removal. presence is owned solely by GET_ZCOLOR now: when
     // apply_zcolor_result reports a slot present->absent the lane renders empty,
     // but #1071: the override (brand/spool_name/spoolman) and the MR DB lane_data
@@ -5006,7 +5205,7 @@ class GcodeCapturingBackend : public AmsBackendAd5xIfs {
 } // namespace
 
 TEST_CASE("AD5X IFS external color change mirrors colors+types into _IFS_VARS",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("ifs_vars_mirror_external");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5062,7 +5261,7 @@ TEST_CASE("AD5X IFS external color change mirrors colors+types into _IFS_VARS",
 }
 
 TEST_CASE("AD5X IFS bambufy prefix gets SHOW=0 to suppress _IFS_VARS echo",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("ifs_vars_mirror_bambufy_show0");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5105,7 +5304,7 @@ TEST_CASE("AD5X IFS bambufy prefix gets SHOW=0 to suppress _IFS_VARS echo",
 }
 
 TEST_CASE("AD5X IFS mirror skipped when has_ifs_vars_ is false (stock zmod)",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Stock zmod (no lessWaste/bambufy plugin) has no _IFS_VARS macro to call.
     // Sync still fires (lane_data still updates for Orca) but the mirror push
     // is skipped — calling _IFS_VARS on a printer without the macro just
@@ -5158,7 +5357,7 @@ TEST_CASE("AD5X IFS mirror skipped when has_ifs_vars_ is false (stock zmod)",
 // every boot, and after the wipe the next boot loaded 0 overrides because
 // boot 1 had cleared them all.
 TEST_CASE("AD5X IFS empty colors_[] on boot does NOT establish phantom baseline",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("boot_phantom_baseline_no_clear");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5268,7 +5467,7 @@ TEST_CASE("AD5X IFS empty colors_[] on boot does NOT establish phantom baseline"
 }
 
 TEST_CASE("AD5X IFS first firmware color observation does NOT clear override",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Even when the override's saved color differs from what the firmware
     // reports at startup, the very first observation is a BASELINE. This
     // matches real-world startup: override loaded from lane_data arrives
@@ -5336,7 +5535,7 @@ TEST_CASE("AD5X IFS first firmware color observation does NOT clear override",
 // ------------------------------------------------------------------
 
 TEST_CASE("AD5X IFS set_slot_info(persist=true) does not wipe override on color edit",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Baseline firmware parse establishes last_firmware_color_.
     // Then user saves a new override with a DIFFERENT color.
     // The override must survive — not get treated as a hardware swap.
@@ -5393,7 +5592,7 @@ TEST_CASE("AD5X IFS set_slot_info(persist=true) does not wipe override on color 
 }
 
 TEST_CASE("AD5X IFS set_slot_info(persist=false) preview does not wipe existing override",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     // Seed a pre-existing override, establish baseline via firmware parse,
     // then preview a DIFFERENT color with persist=false. The preview must
     // not be misread as a physical swap — the saved override must remain
@@ -5595,7 +5794,7 @@ TEST_CASE("AD5X IFS pure black (#000000) is a real reading, not a no-signal sent
 // ------------------------------------------------------------------
 
 TEST_CASE("AD5X IFS clear_slot_override erases in-memory override and MR DB entry",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("task16_clear_slot_override");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -5663,7 +5862,7 @@ TEST_CASE("AD5X IFS clear_slot_override erases in-memory override and MR DB entr
 }
 
 TEST_CASE("AD5X IFS clear_slot_override is safe when no override is present",
-          "[ams][ad5x_ifs][filament_slot_override][slow]") {
+          "[ams][ad5x_ifs][filament_slot_override]") {
     Ad5xIfsTmpCacheDir tmp("task16_clear_slot_override_noop");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;

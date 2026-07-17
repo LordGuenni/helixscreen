@@ -66,7 +66,7 @@ class AceTestAccess {
 
     // Expose the on_started() subscription-vs-REST decision (#1069). Returns
     // the slot-bearing object, or nullptr when the REST fallback should run.
-    static const json* select_slot_bearing_object(const json& status, const char** key) {
+    static const json* select_slot_bearing_object(const json& status, std::string* key) {
         return AmsBackendAce::select_slot_bearing_object(status, key);
     }
 
@@ -629,7 +629,7 @@ TEST_CASE("ACE operations require API", "[ams][ace][preconditions]") {
 // ============================================================================
 
 TEST_CASE("ACE override loaded at init is applied over firmware data",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_override_applied");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -666,7 +666,7 @@ TEST_CASE("ACE override loaded at init is applied over firmware data",
 }
 
 TEST_CASE("ACE migrates from helix-screen:ace_slot_overrides on first startup",
-          "[ams][ace][filament_slot_override][migration][slow]") {
+          "[ams][ace][filament_slot_override][migration]") {
     // Pre-Task-8 ACE wrote per-slot overrides to
     // helix-screen:ace_slot_overrides. On first startup post-upgrade, the
     // store's load_blocking() migrates that data into lane_data and deletes
@@ -718,7 +718,7 @@ TEST_CASE("ACE migrates from helix-screen:ace_slot_overrides on first startup",
 }
 
 TEST_CASE("ACE set_slot_info(persist=true) writes to store",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_persist_true");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -771,7 +771,7 @@ TEST_CASE("ACE set_slot_info(persist=true) writes to store",
 }
 
 TEST_CASE("ACE set_slot_info(persist=false) does NOT write to store",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_persist_false");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -811,7 +811,7 @@ TEST_CASE("ACE set_slot_info(persist=false) does NOT write to store",
 }
 
 TEST_CASE("ACE slot transition empty -> present clears override",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task13_empty_to_present_clears");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -862,7 +862,7 @@ TEST_CASE("ACE slot transition empty -> present clears override",
 }
 
 TEST_CASE("ACE slot transition loaded -> empty does NOT clear override",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     // User unloaded the current spool but hasn't swapped yet. The override
     // must survive — they may reinsert the same spool. Only the inverse
     // transition (empty -> present) is a swap signal.
@@ -935,7 +935,7 @@ TEST_CASE("ACE partial override only replaces specified fields",
 // ============================================================================
 
 TEST_CASE("ACE clear_slot_override erases in-memory override and MR DB entry",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task16_clear_slot_override");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -996,7 +996,7 @@ TEST_CASE("ACE clear_slot_override erases in-memory override and MR DB entry",
 }
 
 TEST_CASE("ACE clear_slot_override is a no-op when no override is present",
-          "[ams][ace][filament_slot_override][slow]") {
+          "[ams][ace][filament_slot_override]") {
     AceTmpCacheDir tmp("task16_clear_slot_override_noop");
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
@@ -1161,11 +1161,11 @@ TEST_CASE("ACE manager-only ace object (no slots) selects REST fallback",
     json status = json::object();
     status["ace"] = json{{"ace_instances", 1}, {"current_index", 0}};
 
-    const char* key = nullptr;
+    std::string key;
     const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
 
     CHECK(picked == nullptr);
-    CHECK(key == nullptr);
+    CHECK(key.empty());
 }
 
 TEST_CASE("ACE object WITH slots array still selects subscription path",
@@ -1178,11 +1178,10 @@ TEST_CASE("ACE object WITH slots array still selects subscription path",
             {"model", "ACE Pro"},
             {"slots", json::array({json{{"status", "available"}, {"type", "PLA"}}})},
         };
-        const char* key = nullptr;
+        std::string key;
         const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
         REQUIRE(picked != nullptr);
-        REQUIRE(key != nullptr);
-        CHECK(std::string(key) == "ace");
+        CHECK(key == "ace");
     }
 
     SECTION("native filament_hub key preferred") {
@@ -1191,11 +1190,10 @@ TEST_CASE("ACE object WITH slots array still selects subscription path",
         // A manager-only ace present alongside must NOT be picked over the
         // slot-bearing filament_hub.
         status["ace"] = json{{"ace_instances", 1}, {"current_index", 0}};
-        const char* key = nullptr;
+        std::string key;
         const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
         REQUIRE(picked != nullptr);
-        REQUIRE(key != nullptr);
-        CHECK(std::string(key) == "filament_hub");
+        CHECK(key == "filament_hub");
     }
 
     SECTION("empty slots array is not slot-bearing") {
@@ -1203,10 +1201,92 @@ TEST_CASE("ACE object WITH slots array still selects subscription path",
         // like the manager-only case and fall through to REST.
         json status = json::object();
         status["ace"] = json{{"model", "ACE Pro"}, {"slots", json::array()}};
-        const char* key = nullptr;
+        std::string key;
         const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
         CHECK(picked == nullptr);
     }
+}
+
+// --- #1107: Kobra S1 mainline-Python fork registers `ace_instance_N` ---------
+//
+// The fork exposes each ACE unit as its own `ace_instance_N` Klipper object
+// (has get_status()), NOT a top-level `ace`/`filament_hub`. If a future build
+// of that fork carries a `slots` array on ace_instance_N, the object path must
+// engage; if not, it falls through to the REST bridge like the manager case.
+
+TEST_CASE("ACE ace_instance_0 WITH slots selects subscription path",
+          "[ams][ace][rest_fallback][kobra]") {
+    json status = json::object();
+    status["ace_instance_0"] = json{
+        {"model", "ACE Pro"},
+        {"slots", json::array({json{{"status", "available"}, {"type", "PLA"}}})},
+    };
+    std::string key;
+    const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+    REQUIRE(picked != nullptr);
+    CHECK(key == "ace_instance_0");
+}
+
+TEST_CASE("ACE ace_instance_0 manager-shaped (no slots) selects REST fallback",
+          "[ams][ace][rest_fallback][kobra]") {
+    // The verified Kobra S1 fork exposes ace_instance_0 without a slots array
+    // (has_get_status=True but manager-shaped). Must fall through to REST.
+    json status = json::object();
+    status["ace_instance_0"] = json{{"current_index", 0}, {"ace_count", 1}};
+    std::string key;
+    const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+    CHECK(picked == nullptr);
+    CHECK(key.empty());
+}
+
+TEST_CASE("ACE select prefers filament_hub/ace over ace_instance_N",
+          "[ams][ace][rest_fallback][kobra]") {
+    SECTION("filament_hub beats a slot-bearing ace_instance_0") {
+        json status = json::object();
+        status["filament_hub"] = make_native_filament_hub_payload();
+        status["ace_instance_0"] = json{
+            {"slots", json::array({json{{"status", "available"}, {"type", "PLA"}}})}};
+        std::string key;
+        const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+        REQUIRE(picked != nullptr);
+        CHECK(key == "filament_hub");
+    }
+    SECTION("lowest ace_instance_N wins when several carry slots") {
+        json status = json::object();
+        status["ace_instance_1"] = json{
+            {"slots", json::array({json{{"status", "available"}, {"type", "ABS"}}})}};
+        status["ace_instance_0"] = json{
+            {"slots", json::array({json{{"status", "available"}, {"type", "PLA"}}})}};
+        std::string key;
+        const json* picked = AceTestAccess::select_slot_bearing_object(status, &key);
+        REQUIRE(picked != nullptr);
+        CHECK(key == "ace_instance_0");
+    }
+}
+
+TEST_CASE("ACE status-update path parses ace_instance_0 with slots",
+          "[ams][ace][native][parse][kobra]") {
+    AmsBackendAceTestHelper helper;
+
+    json inst = json{
+        {"model", "ACE Pro"},
+        {"status", "ready"},
+        {"slots",
+         json::array({
+             json{{"status", "available"}, {"type", "PETG"}, {"color", json::array({0, 85, 255})}},
+             json{{"status", "empty"}},
+         })},
+    };
+    json status = json::object();
+    status["ace_instance_0"] = inst;
+
+    json notification = {{"params", json::array({status, 4242.0})}};
+    helper.test_handle_status_update(notification);
+
+    auto info = helper.get_system_info();
+    CHECK(info.total_slots == 2);
+    CHECK(helper.get_slot_info(0).material == "PETG");
+    CHECK(helper.get_slot_info(0).color_rgb == 0x0055FFu);
 }
 
 // --- Fix 3: REST slot parser accepts `type` as a material alias -------------
@@ -1291,7 +1371,7 @@ TEST_CASE("ACE parse_status_response derives model and firmware",
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "ACE missing /info does not surface an error when /status succeeds",
-                 "[ams][ace][rest_fallback][kobra][slow]") {
+                 "[ams][ace][rest_fallback][kobra]") {
     MoonrakerClientMock client(MoonrakerClientMock::PrinterType::VORON_24);
     helix::PrinterState state;
     state.init_subjects(false);
@@ -1342,7 +1422,7 @@ TEST_CASE_METHOD(LVGLTestFixture,
 
 TEST_CASE_METHOD(LVGLTestFixture,
                  "ACE surfaces an error when the data endpoints are all missing",
-                 "[ams][ace][rest_fallback][kobra][slow]") {
+                 "[ams][ace][rest_fallback][kobra]") {
     // Genuinely-missing-bridge case: /info, /status AND /slots all 404. The
     // error must still surface — but now gated on the DATA endpoints failing,
     // not on /info.

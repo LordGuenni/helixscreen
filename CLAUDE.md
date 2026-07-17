@@ -74,14 +74,15 @@ Most commonly needed:
 | # | Rule | ❌ NEVER | ✅ ALWAYS |
 |---|------|----------|----------|
 | 1 | **NO lv_obj_add_event_cb()** | `lv_obj_add_event_cb(btn, cb)` | XML `<event_cb trigger="clicked" callback="name"/>` + `lv_xml_register_event_cb()` |
-| 2 | **NO imperative visibility** | `lv_obj_add_flag(obj, HIDDEN)` | XML `<bind_flag_if_eq subject="state" flag="hidden" ref_value="0"/>` |
+| 2 | **NO imperative visibility** | `lv_obj_add_flag(obj, HIDDEN)` | XML `<bind_flag_if_eq subject="state" flag="hidden" ref_value="0"/>` for cheap show/hide of an already-built subtree. `<if cond="X">…<else/>…</if>` is the structural sibling — use it when the *creation* itself is expensive (a whole card, an alternate layout); it builds only the matching branch instead of both. See `docs/devel/LVGL9_XML_GUIDE.md` § "Structural conditionals with `<if>` / `<else>`". |
 | 3 | **NO lv_label_set_text** | `lv_label_set_text(lbl, val)` | Subject binding: `<text_body bind_text="my_subject"/>` |
 | 4 | **NO C++ styling** | `lv_obj_set_style_bg_color()` | XML: `style_bg_color="#card_bg"` |
 | 5 | **NO manual LVGL cleanup** | `lv_display_delete()`, `lv_group_delete()` | Just `lv_deinit()` - handles everything |
 | 6 | **bind_style priority** | `style_bg_color` + `bind_style` | Inline attrs override - use TWO bind_styles |
 | 7 | **NO ad-hoc callback guards** | `shared_ptr<bool> alive_`, `callback_guard_`, `alive_guard_` | `lifetime_.token()` + `tok.defer(...)` via `AsyncLifetimeGuard` |
 | 8 | **NO lifetime_.defer from BG** | `lifetime_.defer([this](){...})` in API callbacks | `tok.defer([this](){...})` — token holds its own shared_ptr (#707) |
-| 9 | **NO C++ derived subject for compound conditions** | Hand-written observer that combines 2+ subjects (`a \|\| b > c`) | XML `<subject_expr name="x" expr="a or b gt c"/>` or inline `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if` (word forms — `&&`/`<` need XML escaping). No `<repeat>`/looping construct yet (planned). |
+| 9 | **NO C++ derived subject for compound conditions** | Hand-written observer that combines 2+ subjects (`a \|\| b > c`) | XML `<subject_expr name="x" expr="a or b gt c"/>` or inline `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if` (word forms — `&&`/`<` need XML escaping). |
+| 10 | **NO C++ create-and-wire loop for repeated fragments** | `for(int i=0;i<n;i++) { lv_obj_create(...); ... }` in C++ | XML `<repeat count="4">…$i…</repeat>` (fixed) or `<repeat count="a_subject">…${i}…</repeat>` (reactive rebuild on subject change) — see `docs/devel/LVGL9_XML_GUIDE.md` § "Repeating fragments with `<repeat>`". Measured layout, computed callbacks, and data population still belong in C++ — `<repeat>` only replaces the widget-creation loop itself. |
 
 **Exceptions:** DELETE cleanup, widget pool recycling, chart data, animations
 

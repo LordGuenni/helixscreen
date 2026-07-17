@@ -229,6 +229,66 @@ panel — not a slicer-to-printer write.
 - **Wire-format spec (public):** [`../specs/filament_slots.md`](../specs/filament_slots.md)
 - **Implementation notes (internal):** [`FILAMENT_SLOT_METADATA.md`](FILAMENT_SLOT_METADATA.md)
 
+### AD5X IFS material/color reconcile (locks, insert, #1065/#1071)
+
+Native ZMOD has **no per-port RFID or spool identity** — the only per-lane
+signals are a color (`ffmColor`) and a material type (`ffmType`), read via
+`GET_ZCOLOR` / `IFS_STATUS`, plus a presence bit from `IFS_STATUS Ports`. Because
+there's no identity, a lane's `FilamentSlotOverride` bundles two conceptually
+different kinds of data, and they follow different rules:
+
+- **Display data** — `color_rgb` + `material`. Should track what's physically loaded.
+- **Identity data** — `spoolman_id`, `brand`, `spool_name`, weights. Attached by
+  the user; firmware knows nothing about it. Retained across an eject/insert
+  cycle so a re-inserted same spool keeps its assignment (**#1071**).
+
+The `user_locked_color` / `user_locked_material` flags gate whether the
+`OverwriteAlways` auto-mirror (`mirror_firmware_to_lane_data`) may refresh the
+display fields from firmware truth. A locked field is **never** auto-refreshed —
+this exists to protect a deliberate user choice from the AD5X post-print
+`FFMInfo` revert, which re-emits the *old* type after a print (**#965**).
+
+**The reconcile detectors** live in `ams_backend_ad5x_ifs.cpp`:
+`check_external_color_change` and `check_external_type_change`, both called from
+`update_slot_from_state`. Each keeps a per-slot baseline (`last_firmware_color_`
+/ `last_firmware_material_`); a baseline≠observed delta on a *present* lane fires
+`sync_override_to_firmware_locked`, which runs the auto-mirror.
+
+Two footguns this area has repeatedly hit (fixed in #1065; keep them fixed):
+
+1. **Baseline swallow on presence lag.** On modern ZMOD the firmware
+   color/type can surface one parse frame *before* `IFS_STATUS Ports` flips the
+   slot present. The detectors must **hold** the baseline while the slot reads
+   not-present (advancing it only for a genuine empty-lane/`""` eject reading).
+   If the baseline advances during the lag, the delta is consumed while the sync
+   is skipped, and when presence catches up there's no delta left — the change is
+   swallowed (classic symptom: *color updated on screen, material stuck*).
+
+2. **Insert can't clear a lock, so the display sticks.** The only thing that
+   clears a lock is an external `CHANGE_ZCOLOR` in the gcode stream (**#981**,
+   emitted by the ZMOD COLOR macro / LCD). A **physical insert emits no
+   `CHANGE_ZCOLOR`**, so a lane whose material was locked — either by a menu
+   type-set (`set_slot_info`) or by the pessimistic `!material.empty()` load
+   default in `from_lane_data_record` — keeps painting the *previous* spool's
+   type after a new spool goes in. This is why "change type via the COLOR macro"
+   worked while "insert a new spool and change its type" did not.
+
+   Fix: `unlock_auto_tracked_override_on_insert_locked()` runs on the
+   empty→present edge (both `apply_zcolor_result` presence sites). It drops the
+   two lock flags **only when the lane has no real Spoolman binding**
+   (`spoolman_id <= 0`) — an auto-tracked material is a guess that a fresh insert
+   invalidates, so firmware truth should win. `brand` / `spool_name` /
+   `spoolman_id` / weights are never touched, so a retained binding still paints.
+
+   **Why gate on the Spoolman binding.** On insert we can't tell "same spool back
+   after maintenance" from "brand-new spool" — there's no identity signal. The
+   two want opposite things for the identity fields, so we don't guess: a lane
+   with a deliberate Spoolman binding is left entirely alone (**#1071** retains
+   it), and only auto-tracked lanes (no binding) refresh material/color from
+   firmware. The residual case — a genuinely different spool re-inserted into a
+   *bound* lane — keeps the stale binding until the user re-binds, the same
+   tradeoff #1071 already accepts.
+
 ### OrcaSlicer compatibility — by backend
 
 All HelixScreen-managed AMS backends write the AFC-standard `lane_data`
@@ -237,15 +297,20 @@ additional configuration. **Verified against OrcaSlicer upstream/main
 (post-2.4.0-beta nightly)**, source `MoonrakerPrinterAgent.cpp`
 `fetch_moonraker_filament_data()`.
 
-| Backend | Writer | How OrcaSlicer picks it up |
-|---------|--------|----------------------------|
-| AD5X IFS | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `lane_data` namespace |
-| AFC / Box Turtle | AFC's own Klipper plugin | `lane_data` namespace (AFC is the originator) |
-| Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
-| Tool Changer | (not applicable — no per-slot metadata) | N/A |
+| Backend | Writer | Key style | How OrcaSlicer picks it up |
+|---------|--------|-----------|----------------------------|
+| AD5X IFS | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
+| Snapmaker U1 | HelixScreen (`FilamentSlotOverrideStore`) | `T<n>` (0-based) — tool changer | `lane_data` namespace |
+| ACE (Anycubic ACE Pro) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
+| CFS (Creality K2) | HelixScreen (`FilamentSlotOverrideStore`) | `laneN` (1-based) | `lane_data` namespace |
+| AFC / Box Turtle | AFC's own Klipper plugin | `laneN` (1-based) | `lane_data` namespace (AFC is the originator) |
+| Happy Hare | Happy Hare's own Klipper plugin (`components/mmu_server.py` `push_lane_data`) | `laneN` (1-based) | `lane_data` namespace — Orca prefers it over the live `mmu` object |
+| Tool Changer | (not applicable — no per-slot metadata) | — | N/A |
+
+The key style is derived from the AMS type (`lane_key_style_for(get_type())`),
+not hardcoded per backend: tool changers (Snapmaker U1, generic
+klipper-toolchanger) write `T<n>`, filament systems write `laneN`. See the
+interoperability subsection below.
 
 IFS, Snapmaker, ACE, and CFS share the `FilamentSlotOverrideStore`
 infrastructure and publish to `lane_data`; AFC and Happy Hare each write
@@ -286,6 +351,37 @@ a HelixScreen-side `filament_id` resolver:** Orca reads the field from nowhere,
 there is no deterministic (vendor, material) → Orca `setting_id` catalog (the
 ids number in the hundreds and churn across releases), and we do not ship a
 forked OrcaSlicer that could add the read path.
+
+### `lane_data` interoperability (outer-key contract)
+
+`lane_data` is a **shared namespace with multiple writers and multiple
+readers**. The authoritative, source-verified contract lives in the public
+spec — [`../specs/filament_slots.md` § "Interoperating readers and
+writers"](../specs/filament_slots.md#8-interoperating-readers-and-writers).
+Read that section before touching key formatting, the load filter, or the
+migration. The summary:
+
+- **Writers and their key style**: HelixScreen (`T<n>` on tool changers,
+  `laneN` otherwise), AFC (`laneN`), Happy Hare (`laneN`), Mainsail #2510
+  (`T<n>` on Spoolman + tool changer).
+- **Readers**: OrcaSlicer is **key-opaque** (reads the inner `lane` field, never
+  the outer key — `MoonrakerPrinterAgent.cpp:780`), requires the inner `lane`
+  to be a JSON **string**, and does **no deduplication**. HelixScreen's reader
+  is **key-agnostic** and prefers the canonical key for its own style on
+  duplicates (`load_blocking` in `filament_slot_override_store.cpp`).
+- **The collision hazard is not a wrong outer key** — it is the **same inner
+  `lane` under two different outer keys**, which Orca renders as two trays for
+  one slot. A tool changer converges on `T<n>` (matching Mainsail) and migrates
+  its own stale `laneN` records to `T<n>` on load to avoid exactly this.
+
+**Lesson (recorded inline so we don't re-derive it):** verify wire-format
+claims against the tools' **source**, not their PR or release text. Mainsail
+#2510's companion PR broadened an AFC `map` TypeScript type to `string[]`,
+which looked like a schema change but was speculative — upstream AFC still
+emits a scalar `map`. Confirming against `MoonrakerPrinterAgent.cpp` (Orca) and
+the AFC plugin source, not the PR descriptions, is what kept this change
+correct. Cite exact source lines in the spec so a future reader re-verifies the
+same way.
 
 ---
 

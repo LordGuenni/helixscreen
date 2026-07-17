@@ -96,6 +96,81 @@ Renders markdown as native LVGL widgets. Supports `bind_text` for dynamic conten
 <divider_horizontal width="100%"/>
 ```
 
+## Expression-Driven Conditions (`<subject_expr>`, `cond=`)
+
+Every `bind_flag_if_*`/`bind_state_if_*`/`bind_style_if_*` element compares **one** subject against one `ref_value`. For compound conditions (`error OR temp > threshold`), use the expression evaluator instead of a hand-written C++ derived subject.
+
+```xml
+<subjects>
+    <int name="demo_temp" value="50"/>
+    <int name="demo_threshold" value="70"/>
+    <int name="demo_error" value="0"/>
+    <subject_expr name="demo_alarm" expr="demo_error or demo_temp gt demo_threshold"/>
+</subjects>
+
+<lv_obj>
+    <bind_flag_if cond="demo_alarm" flag="hidden" invert="true"/>   <!-- reuses the derived subject -->
+</lv_obj>
+<lv_obj>
+    <bind_flag_if cond="demo_temp gt demo_threshold" flag="hidden" invert="true"/>  <!-- inline, no subject_expr needed -->
+</lv_obj>
+<ui_button text="Action">
+    <bind_state_if cond="demo_alarm" state="disabled"/>
+</ui_button>
+<ui_card>
+    <bind_style_if name="demo_alarm_style" cond="demo_alarm"/>
+</ui_card>
+```
+
+- `<subject_expr name="X" expr="EXPR"/>` — sibling of `<subject>`/`<int>` in a `<subjects>` block; creates a derived int subject that recomputes whenever any subject in `EXPR` changes. Every subject referenced must be declared earlier (forward references silently fail to register).
+- `cond="EXPR"` works inline on `bind_flag_if`, `bind_state_if`, `bind_style_if` — no `subject_expr` needed for a one-off condition.
+- Grammar (integer-only, nonzero = truthy): comparison `eq ne lt le gt ge` (or `== != < <= > >=`), boolean `and or not` (or `&& || !`), arithmetic `+ - * / %` (div/mod by zero → `0`).
+- **House style: word forms** (`and`/`or`/`gt`/...). Symbolic `&&`/`<` are XML metacharacters and need `&amp;&amp;`/`&lt;` escaping — word forms don't.
+- Live testbed: `ui_xml/test_panel.xml` (`-p test`), all four constructs wired to sliders/switch.
+
+## Repeating Fragments (`<repeat>`)
+
+Expands a body N times at load time — replaces a C++ create-and-wire loop.
+
+```xml
+<repeat count="4">
+    <lv_label text="$i"/>              <!-- bare $i: whole-value index, 0/1/2/3 -->
+</repeat>
+
+<repeat count="row_count">             <!-- subject name: REACTIVE, rebuilds on change -->
+    <lv_label bind_text="slot_${i}_label"/>  <!-- ${i}: composes into a larger string -->
+</repeat>
+```
+
+- `count`: literal, `#const`, or a subject name (subject-bound = reactive rebuild via async off-tree teardown, not a synchronous delete).
+- `$i` bare = whole-value substitution only (`text="$i"` works, `text="slot_$i"` does not splice).
+- `${…}` = embedded composition **or** integer expression. A single bare name (`${i}`, `${prop}`) splices into a larger string, e.g. `bind_text="slot_${i}_label"` self-wires each repeated widget to its own indexed subject (C++ must register `slot_0_label`..`slot_N_label`). A token with operators is evaluated as an integer and the result spliced: `${i + 1}`, `${i * 84}` (numeric attrs), `${base * scale}` (subjects), `${cols * 2}` (numeric prop). Operands: `i`, integer literals, numeric props, subjects; grammar as in the expression evaluator. A literal `${...}` anywhere in a value is always resolved.
+- ⚠️ **A subject-bound `<repeat>` must be its parent's last child, or the sole child of a dedicated wrapper.** LVGL always appends freshly-created children to the tail of the parent's list, so on rebuild, items land after any static siblings that follow the `<repeat>` in the document — silently reordering the layout.
+- **Resolve-once**: a `${expr}` is evaluated once at widget creation; subject operands do not update reactively (use `bind_*` for live values). Not yet supported: float expressions, reactive computed numeric attributes, nested `<repeat>`.
+
+## Structural Conditionals (`<if>` / `<else>`)
+
+Creates **only** the matching branch — the other is never built. Different from `bind_flag hidden`/`cond=`, which build both branches and toggle visibility: cheap for light subtrees, wasteful for an expensive one. Use `<if>` for expensive/structural conditional *creation* (a whole card, an alternate layout); keep `bind_flag`/`cond=` for cheap show/hide.
+
+```xml
+<subjects><subject name="c" type="int" value="1"/></subjects>
+<lv_obj name="root">
+  <if cond="c gt 0">
+    <lv_obj name="t"/>
+    <else/>
+    <lv_obj name="f"/>
+  </if>
+</lv_obj>
+<!-- c > 0: root's only child is "t". c <= 0: root's only child is "f". -->
+```
+(adapted from `tests/unit/test_xml_if_else.cpp`)
+
+- `<else/>` is an inline divider *inside* the one `<if>…</if>` — everything before it is the true-body, everything after (up to `</if>`) is the false-body. `<else/>` and `<else></else>` are identical. Optional — no `<else>` means "create nothing" on false, component still loads.
+- `cond`: same word-form grammar as `cond=`/`<subject_expr>` above — subject names, int literals, `and`/`or`/`not`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, arithmetic.
+- **Static vs reactive**: no subject operands = static, evaluated once at load, no observer, losing branch never created. One or more subject operands = reactive, rebuilds (tears down current branch, builds the other) on any operand change.
+- ⚠️ **A reactively-rebuilt `<if>` must be its parent's last child, or the sole child of a dedicated wrapper** — same ordering constraint as `<repeat>` above (LVGL appends the rebuilt body after any static siblings that follow it in the document, silently reordering the layout).
+- Second `<else/>` in one `<if>` → warns, first split wins. Stray `<else/>` outside any `<if>` → warns, ignored, component still loads. Nested `<if>` not yet supported (same as nested `<repeat>`).
+
 ## Styles
 
 ### Defining (NO style_ prefix inside <styles>)

@@ -229,6 +229,8 @@ LVGL XML uses prefix sigils to distinguish different value types:
 |-------|---------|---------|---------|
 | `#` | Design token / const | `style_pad_all="#space_md"` | Spacing, colors, sizes |
 | `$` | Component prop | `text="$primary_text"` | Inside component templates |
+| `$i` | `<repeat>` loop index | `text="$i"` | Inside a `<repeat>` body (see [Repeating fragments](#repeating-fragments-with-repeat)) |
+| `${expr}` | Embedded composition / integer expression | `bind_text="slot_${i + 1}_label"`, `style_translate_x="${i * 84}"` | Splices a bare name (`${i}`, `${grp}`) or evaluates an integer expression and splices the result. See [Repeating fragments](#repeating-fragments-with-repeat) |
 | `@` | Subject binding | `text="@my_subject"` | Reactive data on `ui_button` |
 
 The `@` prefix on `ui_button`'s `text` attribute marks a value as a subject reference (reactive) vs. a literal string (static). Alternatively, `bind_text` always treats its value as a subject name (no `@` needed). See [ui_button](#ui_button) for details.
@@ -550,6 +552,77 @@ These are parse-time only -- the hidden state does not change after creation. Fo
 **❌ No `bind_text_if_eq`** - use multiple labels with `bind_flag_if_*` for conditional text.
 
 **✅ Compound conditions are supported** via the expression evaluator (see "Expression Conditionals" above) — `cond="a or b gt c"` on `bind_flag_if`/`bind_state_if`/`bind_style_if`, or a `<subject_expr>` derived subject for a condition reused in multiple places. This replaces stacking several single-subject `bind_flag_if_*` elements or writing a hand-rolled C++ derived subject for "OR of two subjects" type logic.
+
+#### Repeating fragments with `<repeat>`
+
+`<repeat count="N">…body…</repeat>` expands its body `N` times at load time, so a fixed-size list of widgets becomes XML structure instead of a C++ create-and-wire loop. Inside the body, the bare sigil `$i` resolves to the zero-based iteration index.
+
+```xml
+<lv_obj name="root">
+  <repeat count="4">
+    <lv_label name="lbl" text="$i" style_pad_all="#space_sm"/>
+  </repeat>
+</lv_obj>
+<!-- root now has 4 labels reading "0", "1", "2", "3" -->
+```
+
+`count` accepts three forms:
+
+| Form | Example | Meaning |
+|------|---------|---------|
+| Literal | `count="4"` | A fixed integer (clamped to `[0, 256]`), resolved once at load time. The expansion never changes. |
+| `#const` | `count="#rows"` | A component `<const>` value, resolved once at load time. |
+| Subject name | `count="row_count"` | **Reactive.** Expands to the subject's current value at load time, then re-expands automatically every time the subject changes — teardown of the old items and creation of the new ones happens on an async, off-tree-reparent path (no synchronous deletion inside the observer callback). |
+
+Each iteration re-resolves the body against pristine attribute values, so `$i`, `$param`, and `#const` references all yield independent per-iteration results — the labels above each get their own index, not a shared last value.
+
+> ⚠️ **Subject-bound `<repeat>` MUST be the last child of its parent, or the only child of a dedicated container.** On rebuild, the old expansion's roots are detached and the new ones are created fresh — and LVGL always appends a freshly-created child to the *end* of its parent's child list. If a subject-bound `<repeat>` shares a parent with static siblings that come after it in the document, those siblings stay put but the rebuilt repeat items land *after* them, silently reordering the layout every time the count changes. A literal or `#const` `count` never rebuilds, so this only matters for subject-bound `count`. Fix: give the `<repeat>` its own container (an `<lv_obj>` wrapper with no other children), or make it the last element inside its parent. See `ui_xml/test_panel.xml` "XML Repeat Demo" for a worked example of both the fixed and subject-bound forms side by side.
+
+##### Self-wiring indexed subjects with `${name}`
+
+The bare `$i` sigil is a whole-value substitution: `text="$i"` becomes the index, but `text="slot_$i"` does not splice. To compose the index (or a component prop) **into a larger string**, use the embedded `${name}` sigil. This is what lets a repeated widget bind to its own per-iteration subject:
+
+```xml
+<lv_obj name="root">
+  <repeat count="3">
+    <lv_label name="lbl" bind_text="demo_${i}_v"/>
+  </repeat>
+</lv_obj>
+<!-- three labels bind to subjects demo_0_v, demo_1_v, demo_2_v -->
+```
+
+`${i}` resolves to the loop index; any other `${name}` resolves against the component's props (passed attributes first, then the `<prop>` default). Both can appear in the same value, so a component with `<prop name="grp"/>` instantiated as `<my_row grp="fan"/>` can bind `bind_text="status_${grp}_${i}_x"` → `status_fan_0_x`, `status_fan_1_x`, … The C++ side is responsible for registering those indexed subjects; an unresolved `${name}` splices empty and logs a warning.
+
+`${…}` also evaluates **integer expressions** and splices the result as text: `${i + 1}` (1-based names), `${i * 84}` (computed numeric attributes like `style_translate_x`), `${base * scale}` (subject operands), `${cols * 2}` (a numeric component prop). A single bare name (`${i}`, `${grp}`) still means name-substitution; a token containing operators is evaluated. Operands: the loop index `i`, integer literals, numeric props, and subjects; the grammar and word forms are the same as [expression conditionals](#expression-conditionals). Division/modulo by zero and any unresolvable or malformed expression splice empty and log a warning.
+
+> ⚠️ **Resolve-once.** A `${expr}` is evaluated **once, when the widget is created** — subject operands are read at that moment and the composed value does **not** update if the subject changes later. A `<repeat count="subject">` rebuild re-runs composition; a standalone attribute does not. For a value that must track a subject live, use a `bind_*` binding, not composition.
+
+`<repeat>` is intercepted directly by the XML view parser (it creates no widget of its own), so its body must be well-formed markup that would be valid where the `<repeat>` sits. Nesting `<repeat>` inside another `<repeat>` is not yet supported.
+
+#### Structural conditionals with `<if>` / `<else>`
+
+`<if cond="EXPR"> …true-body… <else/> …false-body… </if>` creates **only** the body that matches `cond` — the other branch is never built. This is different from `bind_flag hidden` / `cond=` on `bind_flag_if`, which build every branch up front and then toggle visibility: cheap for light subtrees, wasteful for an expensive one (a whole card, a chart, an alternate layout). Use `<if>` when the *creation* itself is the cost you want to avoid; keep `bind_flag`/`cond=` for cheap show/hide.
+
+```xml
+<subjects><subject name="c" type="int" value="1"/></subjects>
+<lv_obj name="root">
+  <if cond="c gt 0">
+    <lv_obj name="t"/>
+    <else/>
+    <lv_obj name="f"/>
+  </if>
+</lv_obj>
+<!-- c > 0: root's only child is "t". c <= 0: root's only child is "f". -->
+```
+(adapted from `tests/unit/test_xml_if_else.cpp`)
+
+`<else/>` is an inline divider *inside* the single matched `<if>…</if>` block, not a separate sibling tag: everything before it is the true-body, everything after it (up to `</if>`) is the false-body. Both spellings behave identically — self-closing `<else/>` and empty-element `<else></else>` — the split point is the `<else>` open tag; the marker's own open/close events aren't part of either body. `<else>` is optional: `<if cond="X">…</if>` with no `<else>` creates nothing when `cond` is false, and the component still loads. A second `<else/>` inside one `<if>` is a mistake — it warns and the first split wins. A stray `<else/>` with no enclosing `<if>` also warns and is ignored; the component still loads.
+
+`cond` uses the same word-form expression grammar as [Expression Conditionals](#expression-conditionals) — subject names, int literals, `and`/`or`/`not`, `eq`/`ne`/`lt`/`le`/`gt`/`ge`, arithmetic operators. A cond with **no subject operands is static**: it's evaluated once at load time and the losing branch is never created — no observer. A cond that **references one or more subjects is reactive**: it fires immediately for the initial build, then re-evaluates and rebuilds (tears down the current branch, builds the other) on every change to *any* referenced subject — `cond="a and b gt c"` rebuilds whether `a`, `b`, or `c` changes.
+
+> ⚠️ **A reactively-rebuilt `<if>` must be the last child of its parent, or the only child of a dedicated container** — the same ordering constraint as [`<repeat>`](#repeating-fragments-with-repeat). On rebuild, LVGL appends the freshly-built body to the *end* of the parent's child list, so static siblings that come after the `<if>` in the document stay put while the rebuilt body lands after them, silently reordering the layout on every flip. A static `<if>` never rebuilds, so this only matters for a subject-referencing `cond`.
+
+Nested `<if>` (an `<if>` inside another `<if>`/`<repeat>` body) is not yet supported, same as nested `<repeat>`.
 
 ### 4. Observer Cleanup in DELETE Handlers
 

@@ -42,6 +42,10 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     AmsError unload_filament(int slot_index = -1) override;
     AmsError select_slot(int slot_index) override;
     AmsError change_tool(int tool_number) override;
+    
+    [[nodiscard]] bool supports_gate_select() const override { return true; }
+    AmsError select_gate(int slot_index) override;
+    AmsError move_selector(int delta) override;
 
     // Recovery
     AmsError recover() override;

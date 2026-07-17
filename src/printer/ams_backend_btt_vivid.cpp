@@ -381,6 +381,33 @@ AmsError AmsBackendBttVivid::select_slot(int slot_index) {
     return execute_gcode(fmt::format("MMS_SELECT SLOT={}", slot_index));
 }
 
+AmsError AmsBackendBttVivid::select_gate(int slot_index) {
+    return select_slot(slot_index);
+}
+
+AmsError AmsBackendBttVivid::move_selector(int delta) {
+    if (!running_) {
+        return AmsErrorHelper::not_connected("BTT Vivid backend not started");
+    }
+
+    const int count = system_info_.total_slots;
+    if (count <= 0) {
+        return AmsErrorHelper::not_supported("Selector jog");
+    }
+
+    int base = system_info_.current_slot;
+    if (base < 0) {
+        base = 0;
+    }
+
+    int target = (base + delta) % count;
+    if (target < 0) {
+        target += count;
+    }
+
+    return select_slot(target);
+}
+
 AmsError AmsBackendBttVivid::change_tool(int tool_number) {
     return execute_gcode(fmt::format("T{}", tool_number));
 }

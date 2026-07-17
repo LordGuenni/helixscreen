@@ -285,7 +285,7 @@ void PrintStartCollector::start() {
 void PrintStartCollector::stop() {
     // Mark inactive first to stop callbacks from processing
     bool was_active = active_.exchange(false);
-    bool was_registered = registered_.exchange(false);
+    (void)registered_.exchange(false);
 
     // Keep gcode response handler registered permanently — it checks active_ and
     // returns early when not collecting. This avoids the race where early responses
@@ -398,7 +398,6 @@ void PrintStartCollector::check_fallback_completion() {
     // Check current phase under lock
     std::chrono::steady_clock::time_point start_time;
     PrintStartPhase current;
-    bool print_start_was_detected;
     float predicted_total;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -407,7 +406,6 @@ void PrintStartCollector::check_fallback_completion() {
             return;
         }
         current = current_phase_;
-        print_start_was_detected = print_start_detected_;
         start_time = printing_state_start_;
         predicted_total = predicted_total_seconds_;
     }

@@ -48,6 +48,7 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     AmsError reset() override;
     AmsError reset_lane(int /*slot_index*/) override { return AmsErrorHelper::not_supported("Per-lane reset"); }
     AmsError eject_lane(int /*slot_index*/) override { return AmsErrorHelper::not_supported("Lane eject"); }
+    AmsError pop_filament(int slot_index) override;
     AmsError cancel() override;
 
     // Configuration
@@ -57,6 +58,12 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     [[nodiscard]] bool is_bypass_active() const override { return false; }
     AmsError enable_bypass() override { return AmsErrorHelper::not_supported("Bypass mode"); }
     AmsError disable_bypass() override { return AmsErrorHelper::not_supported("Bypass mode"); }
+    bool has_environment_sensors() const override;
+
+    // Configuration / UI Actions
+    [[nodiscard]] std::vector<helix::printer::DeviceSection> get_device_sections() const override;
+    [[nodiscard]] std::vector<helix::printer::DeviceAction> get_device_actions() const override;
+    AmsError execute_device_action(const std::string& action_id, const std::any& value = {}) override;
 
     [[nodiscard]] RemapStrategy get_remap_strategy() const override {
         return RemapStrategy::Native;
@@ -81,4 +88,11 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     helix::AsyncLifetimeGuard lifetime_;
     helix::printer::SlotRegistry slots_;
     std::string reason_for_pause_;
+
+    DryerInfo dryer_info_;
+    float current_humidity_ = 0.0f;
+    bool has_humidity_ = false;
+    std::vector<bool> buffer_triggered_;
+    std::vector<PathSegment> slot_segments_;
+    std::vector<float> buffer_pcts_;
 };

@@ -43,6 +43,13 @@
         <bind_state_if_eq subject="ams_slot_is_loaded" state="disabled" ref_value="0"/>
         <event_cb trigger="clicked" callback="ams_context_unload_cb"/>
       </ui_button>
+      <!-- Pop Button (disabled when slot is not loaded) -->
+      <ui_button name="btn_pop_slot" hidden="true"
+                 height="#button_height_sm" icon="z_closer" text="Pop" translation_tag="Pop"
+                 variant="ghost" clickable="true" style_flex_main_place="start">
+        <bind_state_if_eq subject="ams_slot_is_loaded" state="disabled" ref_value="0"/>
+        <event_cb trigger="clicked" callback="ams_context_pop_cb"/>
+      </ui_button>
       <!-- Eject hint (QIDI Box): a lane has ejectable filament but
            [force_move] enable_force_move is off, so eject is unavailable.
            Revealed from C++ instead of silently omitting the action (#1041). -->

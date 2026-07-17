@@ -1462,6 +1462,21 @@ void AmsPanel::show_context_menu(int slot_index, lv_obj_t* near_widget, lv_point
             show_edit_modal(slot, /*open_on_picker=*/true);
             break;
 
+        case helix::ui::AmsContextMenu::MenuAction::POP_SPOOL:
+            if (!backend) {
+                NOTIFY_WARNING(lv_tr("Multi-Filament System not available"));
+                return;
+            }
+            {
+                AmsError error = backend->pop_filament(slot);
+                if (error.success()) {
+                    NOTIFY_INFO(lv_tr("Popping filament from slot {}..."), slot + 1);
+                } else {
+                    NOTIFY_ERROR(lv_tr("Pop failed: {}"), error.user_msg);
+                }
+            }
+            break;
+
         case helix::ui::AmsContextMenu::MenuAction::SCAN_QR: {
             auto& scanner = helix::ui::get_qr_scanner_overlay();
             scanner.show(parent_screen_, slot, [this, slot](const SpoolInfo& spool) {

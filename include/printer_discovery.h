@@ -557,6 +557,8 @@ class PrinterDiscovery {
             } else if (mmu_type_ == AmsType::QIDI_BOX) {
                 // i18n: do not translate - product name
                 detected_ams_systems_.push_back({AmsType::QIDI_BOX, "QIDI Box"});
+            } else if (mmu_type_ == AmsType::BTT_VIVID) {
+                detected_ams_systems_.push_back({AmsType::BTT_VIVID, "BTT Vivid"});
             }
         } else if (has_snapmaker_) {
             // Native Snapmaker filament system (no aftermarket MMU)

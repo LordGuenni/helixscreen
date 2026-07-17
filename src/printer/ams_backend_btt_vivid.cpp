@@ -5,6 +5,7 @@
 #include "moonraker_api.h"
 #include "moonraker_client.h"
 #include "printer_hardware.h"
+#include "btt_vivid_defaults.h"
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -21,16 +22,20 @@ AmsBackendBttVivid::~AmsBackendBttVivid() = default;
 
 void AmsBackendBttVivid::on_started() {
     AmsSubscriptionBackend::on_started();
-
-    // Force an initial fetch of printer.mms
-    nlohmann::json params = {{"objects", {{"mms", nullptr}}}};
-    auto token = lifetime_.token();
-    client_->send_jsonrpc("printer.objects.query", params, [this, token](nlohmann::json response) {
-        if (response.contains("result") && response["result"].contains("status") && response["result"]["status"].contains("mms")) {
-            token.defer("btt_vivid_init", [this, mms = response["result"]["status"]["mms"]]() mutable {
-                std::lock_guard<std::mutex> lock(mutex_);
-                parse_mms_state(mms);
-                emit_event(EVENT_STATE_CHANGED);
+    nlohmann::json params;
+    params["objects"] = {
+        {"mms", nullptr},
+        {"heater_generic ViViD_Dryer", nullptr},
+        {"aht10 ViViD_Dryer_L", nullptr},
+        {"aht10 ViViD_Dryer_R", nullptr}
+    };
+    
+    client_->send_jsonrpc("printer.objects.query", params, [this, token = lifetime_.token()](nlohmann::json response) {
+        if (response.contains("result") && response["result"].contains("status")) {
+            token.defer("btt_vivid_init", [this, status = response["result"]["status"]]() mutable {
+                nlohmann::json fake_notification;
+                fake_notification["params"] = {status};
+                handle_status_update(fake_notification);
             });
         }
     });
@@ -42,8 +47,58 @@ void AmsBackendBttVivid::handle_status_update(const nlohmann::json& notification
     }
     const auto& params = notification["params"][0];
     if (params.contains("mms")) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            parse_mms_state(params["mms"]);
+        }
+        emit_event(EVENT_STATE_CHANGED);
+    }
+    
+    // Parse temperatures and humidity from dedicated sensor objects
+    bool env_updated = false;
+    if (params.contains("heater_generic ViViD_Dryer")) {
+        const auto& h = params["heater_generic ViViD_Dryer"];
         std::lock_guard<std::mutex> lock(mutex_);
-        parse_mms_state(params["mms"]);
+        if (h.contains("temperature")) {
+            dryer_info_.current_temp_c = h["temperature"].get<float>();
+            dryer_info_.supported = true;
+            env_updated = true;
+        }
+        if (h.contains("target")) {
+            dryer_info_.target_temp_c = h["target"].get<float>();
+            dryer_info_.active = (dryer_info_.target_temp_c > 0.0f);
+            env_updated = true;
+        }
+    }
+    if (params.contains("aht10 ViViD_Dryer_L")) {
+        const auto& h = params["aht10 ViViD_Dryer_L"];
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (h.contains("humidity")) {
+            current_humidity_ = h["humidity"].get<float>();
+            has_humidity_ = true;
+            env_updated = true;
+        }
+        if (h.contains("temperature") && dryer_info_.current_temp_c <= 0.0f) {
+            dryer_info_.current_temp_c = h["temperature"].get<float>();
+            dryer_info_.supported = true;
+            env_updated = true;
+        }
+    } else if (params.contains("aht10 ViViD_Dryer_R")) {
+        const auto& h = params["aht10 ViViD_Dryer_R"];
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (h.contains("humidity") && !has_humidity_) { // L takes precedence if both exist
+            current_humidity_ = h["humidity"].get<float>();
+            has_humidity_ = true;
+            env_updated = true;
+        }
+        if (h.contains("temperature") && dryer_info_.current_temp_c <= 0.0f) {
+            dryer_info_.current_temp_c = h["temperature"].get<float>();
+            dryer_info_.supported = true;
+            env_updated = true;
+        }
+    }
+    
+    if (env_updated) {
         emit_event(EVENT_STATE_CHANGED);
     }
 }
@@ -51,21 +106,22 @@ void AmsBackendBttVivid::handle_status_update(const nlohmann::json& notification
 void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
     if (mms_data.contains("slots") && mms_data["slots"].is_object()) {
         const auto& slots_json = mms_data["slots"];
-        if (slots_.slot_count() != static_cast<int>(slots_json.size())) {
-            std::vector<std::string> slot_names;
-            for (size_t i = 0; i < slots_json.size(); ++i) {
-                slot_names.push_back(std::to_string(i));
+        if (slots_.slot_count() == 0) {
+            int max_slot = -1;
+            for (const auto& [key, val] : slots_json.items()) {
+                try { max_slot = std::max(max_slot, std::stoi(key)); } catch (...) {}
             }
-            slots_.initialize("BTT Vivid", slot_names);
+            if (max_slot >= 0) {
+                std::vector<std::string> slot_names;
+                for (int i = 0; i <= max_slot; ++i) {
+                    slot_names.push_back(std::to_string(i));
+                }
+                slots_.initialize("BTT Vivid", slot_names);
+                system_info_.total_slots = slots_.slot_count();
+                buffer_triggered_.resize(slots_.slot_count(), false);
+                slot_segments_.resize(slots_.slot_count(), PathSegment::NONE);
+            }
         }
-        
-        system_info_.units.clear();
-        AmsUnit unit;
-        unit.unit_index = 0;
-        unit.first_slot_global_index = 0;
-        unit.slot_count = slots_json.size();
-        unit.name = "BTT Vivid";
-        system_info_.units.push_back(unit);
 
         for (const auto& [key, slot_data] : slots_json.items()) {
             int slot_idx = -1;
@@ -76,19 +132,117 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
             if (slot_idx >= 0 && slot_idx < slots_.slot_count()) {
                 auto* entry = slots_.get_mut(slot_idx);
                 if (entry && slot_data.is_object()) {
-                    bool is_empty = slot_data.value("is_empty", true);
-                    entry->info.status = is_empty ? SlotStatus::EMPTY : SlotStatus::AVAILABLE;
+                    if (slot_data.contains("is_empty")) {
+                        bool is_empty = slot_data["is_empty"].get<bool>();
+                        entry->info.status = is_empty ? SlotStatus::EMPTY : SlotStatus::AVAILABLE;
+                    }
                     
-                    if (slot_data.contains("filament_color") && slot_data["filament_color"].is_string()) {
+                    if (slot_data.contains("color") && slot_data["color"].is_string()) {
+                        std::string hex = slot_data["color"].get<std::string>();
+                        if (!hex.empty()) {
+                            if (hex[0] != '#') hex = "#" + hex;
+                            entry->info.color_rgb = std::strtoul(hex.c_str() + 1, nullptr, 16);
+                        }
+                    } else if (slot_data.contains("filament_color") && slot_data["filament_color"].is_string()) {
                         std::string hex = slot_data["filament_color"].get<std::string>();
                         if (!hex.empty()) {
                             if (hex[0] != '#') hex = "#" + hex;
                             entry->info.color_rgb = std::strtoul(hex.c_str() + 1, nullptr, 16);
                         }
                     }
-                    if (slot_data.contains("filament_material") && slot_data["filament_material"].is_string()) {
+                    if (slot_data.contains("material") && slot_data["material"].is_string()) {
+                        entry->info.material = slot_data["material"].get<std::string>();
+                    } else if (slot_data.contains("filament_material") && slot_data["filament_material"].is_string()) {
                         entry->info.material = slot_data["filament_material"].get<std::string>();
                     }
+                    if (slot_data.contains("vendor") && slot_data["vendor"].is_string()) {
+                        entry->info.brand = slot_data["vendor"].get<std::string>();
+                    }
+                    if (slot_data.contains("spool_id") && slot_data["spool_id"].is_number()) {
+                        entry->info.spoolman_id = slot_data["spool_id"].get<int>();
+                    }
+
+                    // Parse path segments
+                    if (slot_idx < static_cast<int>(slot_segments_.size())) {
+                        bool is_loaded = false;
+                        if (mms_data.contains("loading_slots") && mms_data["loading_slots"].is_array()) {
+                            for (const auto& ls : mms_data["loading_slots"]) {
+                                if (ls.is_number() && ls.get<int>() == slot_idx) {
+                                    is_loaded = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Get previous values if not present in this update
+                        bool has_inlet = slot_data.contains("inlet") ? (slot_data["inlet"].get<int>() == 1) : 
+                                         (slot_segments_[slot_idx] != PathSegment::NONE);
+                        bool has_gate = slot_data.contains("gate") ? (slot_data["gate"].get<int>() == 1) : 
+                                        (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::LANE));
+
+                        if (is_loaded) {
+                            slot_segments_[slot_idx] = PathSegment::TOOLHEAD;
+                        } else if (has_gate) {
+                            slot_segments_[slot_idx] = PathSegment::LANE; // Buffer entry
+                        } else if (has_inlet) {
+                            slot_segments_[slot_idx] = PathSegment::SPOOL;
+                        } else {
+                            slot_segments_[slot_idx] = PathSegment::NONE;
+                        }
+                    }
+
+                    if (slot_data.contains("filament_info") && slot_data["filament_info"].is_object()) {
+                        const auto& finfo = slot_data["filament_info"];
+                        if (finfo.contains("filament_manufacturer") && finfo["filament_manufacturer"].is_string()) {
+                            entry->info.brand = finfo["filament_manufacturer"].get<std::string>();
+                        }
+                        if (finfo.contains("filament_type_detailed") && finfo["filament_type_detailed"].is_string()) {
+                            entry->info.color_name = finfo["filament_type_detailed"].get<std::string>();
+                        }
+                        if (finfo.contains("bed_temperature") && finfo["bed_temperature"].is_number()) {
+                            entry->info.bed_temp = finfo["bed_temperature"].get<int>();
+                        }
+                        if (finfo.contains("nozzle_temp") && finfo["nozzle_temp"].is_number()) {
+                            // MMS provides a single nozzle_temp, so set min/max to it
+                            entry->info.nozzle_temp_min = finfo["nozzle_temp"].get<int>();
+                            entry->info.nozzle_temp_max = entry->info.nozzle_temp_min;
+                        }
+                        if (finfo.contains("spool_id") && finfo["spool_id"].is_number()) {
+                            entry->info.spoolman_id = finfo["spool_id"].get<int>();
+                        }
+                        if (finfo.contains("nominal_netto_full_weight") && finfo["nominal_netto_full_weight"].is_number()) {
+                            entry->info.total_weight_g = finfo["nominal_netto_full_weight"].get<float>();
+                        }
+                        if (finfo.contains("remaining_weight") && finfo["remaining_weight"].is_number()) {
+                            entry->info.remaining_weight_g = finfo["remaining_weight"].get<float>();
+                        }
+                    }
+                    if (slot_data.contains("remaining_weight") && slot_data["remaining_weight"].is_number()) {
+                        entry->info.remaining_weight_g = slot_data["remaining_weight"].get<float>();
+                    }
+                    if (slot_data.contains("total_weight") && slot_data["total_weight"].is_number()) {
+                        entry->info.total_weight_g = slot_data["total_weight"].get<float>();
+                    }
+                }
+            }
+        }
+    }
+    
+    if (mms_data.contains("buffers") && mms_data["buffers"].is_object()) {
+        if (buffer_pcts_.size() < buffer_triggered_.size()) {
+            buffer_pcts_.resize(buffer_triggered_.size(), -1.0f);
+        }
+        for (const auto& [key, buf_data] : mms_data["buffers"].items()) {
+            int buf_idx = -1;
+            try {
+                buf_idx = std::stoi(key);
+            } catch (...) { continue; }
+            
+            if (buf_idx >= 0 && buf_idx < static_cast<int>(buffer_triggered_.size())) {
+                if (buf_data.is_object() && buf_data.contains("pct")) {
+                    float pct = buf_data["pct"].get<float>();
+                    buffer_triggered_[buf_idx] = (pct > 0.0f);
+                    buffer_pcts_[buf_idx] = pct;
                 }
             }
         }
@@ -97,20 +251,68 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
     if (mms_data.contains("loading_slots") && mms_data["loading_slots"].is_array()) {
         auto loading = mms_data["loading_slots"];
         if (!loading.empty()) {
-            system_info_.current_slot = loading[0].get<int>();
+            if (loading[0].is_number_integer()) {
+                system_info_.current_slot = loading[0].get<int>();
+            } else if (loading[0].is_string()) {
+                try { system_info_.current_slot = std::stoi(loading[0].get<std::string>()); } catch (...) { system_info_.current_slot = -1; }
+            } else {
+                system_info_.current_slot = -1;
+            }
         } else {
             system_info_.current_slot = -1;
+        }
+    }
+    
+    // BTT Vivid does not have a separate filament_loaded field, so infer it from current_slot
+    system_info_.filament_loaded = (system_info_.current_slot >= 0);
+    
+    // Update slot statuses with buffers and current slot
+    for (int i = 0; i < slots_.slot_count(); ++i) {
+        auto* entry = slots_.get_mut(i);
+        if (entry && entry->info.status != SlotStatus::EMPTY) {
+            if (system_info_.current_slot == i) {
+                entry->info.status = SlotStatus::LOADED;
+            } else if (i < static_cast<int>(buffer_triggered_.size()) && buffer_triggered_[i]) {
+                entry->info.status = SlotStatus::FROM_BUFFER;
+            } else {
+                entry->info.status = SlotStatus::AVAILABLE;
+            }
         }
     }
 }
 
 AmsSystemInfo AmsBackendBttVivid::get_system_info() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return system_info_;
+    AmsSystemInfo info = slots_.build_system_info();
+    info.type = AmsType::BTT_VIVID;
+    info.type_name = "BTT Vivid";
+    info.current_slot = system_info_.current_slot;
+    info.filament_loaded = system_info_.filament_loaded;
+    
+    if (!info.units.empty()) {
+        if (dryer_info_.supported || has_humidity_) {
+            EnvironmentData env;
+            env.temperature_c = dryer_info_.current_temp_c;
+            env.humidity_pct = current_humidity_;
+            env.has_humidity = has_humidity_;
+            info.units[0].environment = env;
+        }
+
+        // Copy over buffer pcts that were populated in parse_mms_state
+        if (!buffer_pcts_.empty()) {
+            info.units[0].buffer_pcts = buffer_pcts_;
+        }
+    }
+    
+    return info;
 }
 
 AmsType AmsBackendBttVivid::get_type() const {
     return AmsType::BTT_VIVID;
+}
+
+bool AmsBackendBttVivid::has_environment_sensors() const {
+    return true;
 }
 
 SlotInfo AmsBackendBttVivid::get_slot_info(int slot_index) const {
@@ -122,17 +324,22 @@ SlotInfo AmsBackendBttVivid::get_slot_info(int slot_index) const {
 }
 
 PathTopology AmsBackendBttVivid::get_topology() const {
-    return PathTopology::LINEAR;
+    // BTT Vivid (MMS) uses individual buffers for each lane merging into a hub
+    return PathTopology::HUB;
 }
 
 PathSegment AmsBackendBttVivid::get_filament_segment() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (system_info_.current_slot >= 0 && system_info_.current_slot < static_cast<int>(slot_segments_.size())) {
+        return slot_segments_[system_info_.current_slot];
+    }
     return PathSegment::NONE;
 }
 
 PathSegment AmsBackendBttVivid::get_slot_filament_segment(int slot_index) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (auto* entry = slots_.get(slot_index)) {
-        return entry->info.is_present() ? PathSegment::SPOOL : PathSegment::NONE;
+    if (slot_index >= 0 && slot_index < static_cast<int>(slot_segments_.size())) {
+        return slot_segments_[slot_index];
     }
     return PathSegment::NONE;
 }
@@ -155,10 +362,18 @@ AmsError AmsBackendBttVivid::load_filament(int slot_index) {
 
 AmsError AmsBackendBttVivid::unload_filament(int slot_index) {
     if (slot_index >= 0) {
+        if (get_slot_filament_segment(slot_index) == PathSegment::TOOLHEAD) {
+            return execute_gcode("MMS_EJECT");
+        }
         return execute_gcode(fmt::format("MMS_UNLOAD SLOT={}", slot_index));
     } else {
-        return execute_gcode("MMS_UNLOAD");
+        return execute_gcode("MMS_EJECT");
     }
+}
+
+AmsError AmsBackendBttVivid::pop_filament(int slot_index) {
+    if (auto err = validate_slot_index(slot_index); err.result != AmsResult::SUCCESS) return err;
+    return execute_gcode(fmt::format("MMS_POP SLOT={}", slot_index));
 }
 
 AmsError AmsBackendBttVivid::select_slot(int slot_index) {
@@ -182,8 +397,44 @@ AmsError AmsBackendBttVivid::cancel() {
     return execute_gcode("MMS_STOP");
 }
 
-AmsError AmsBackendBttVivid::set_slot_info(int /*slot_index*/, const SlotInfo& /*info*/, bool /*persist*/) {
-    return AmsErrorHelper::not_supported("set_slot_info");
+AmsError AmsBackendBttVivid::set_slot_info(int slot_index, const SlotInfo& info, bool persist) {
+    if (auto err = validate_slot_index(slot_index); err.result != AmsResult::SUCCESS) return err;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (auto* entry = slots_.get_mut(slot_index)) {
+            entry->info = info;
+        }
+    }
+
+    if (!persist) {
+        return AmsErrorHelper::success();
+    }
+
+    std::string hex = fmt::format("{:06x}", info.color_rgb);
+    std::string cmd = fmt::format("MMS_SLOT_MAP SLOT={} COLOR='{}'", slot_index, hex);
+    
+    if (!info.material.empty()) {
+        cmd += fmt::format(" MATERIAL='{}'", info.material);
+    }
+    if (!info.brand.empty()) {
+        cmd += fmt::format(" VENDOR='{}'", info.brand);
+    }
+    if (!info.color_name.empty()) {
+        cmd += fmt::format(" NAME='{}'", info.color_name);
+    }
+    if (info.bed_temp > 0) {
+        cmd += fmt::format(" BED_TEMP={}", info.bed_temp);
+    }
+    if (info.nozzle_temp_min > 0) {
+        cmd += fmt::format(" NOZZLE_TEMP={}", info.nozzle_temp_min);
+    }
+    
+    cmd += fmt::format(" SPOOLID={}", info.spoolman_id > 0 ? info.spoolman_id : -1);
+
+    execute_gcode(cmd);
+
+    return AmsErrorHelper::success();
 }
 
 AmsError AmsBackendBttVivid::set_tool_mapping(int /*tool_number*/, int /*slot_index*/) {
@@ -195,13 +446,32 @@ std::vector<int> AmsBackendBttVivid::get_tool_mapping() const {
 }
 
 DryerInfo AmsBackendBttVivid::get_dryer_info(int /*unit*/) const {
-    return {};
+    std::lock_guard<std::mutex> lock(mutex_);
+    return dryer_info_;
 }
 
-AmsError AmsBackendBttVivid::start_drying(float /*temp_c*/, int /*duration_min*/, int /*fan_pct*/, int /*unit*/) {
-    return AmsErrorHelper::not_supported("start_drying");
+AmsError AmsBackendBttVivid::start_drying(float temp_c, int /*duration_min*/, int /*fan_pct*/, int /*unit*/) {
+    return execute_gcode(fmt::format("SET_HEATER_TEMPERATURE HEATER=ViViD_Dryer TARGET={}", temp_c));
 }
 
 AmsError AmsBackendBttVivid::stop_drying(int /*unit*/) {
-    return AmsErrorHelper::not_supported("stop_drying");
+    return execute_gcode("SET_HEATER_TEMPERATURE HEATER=ViViD_Dryer TARGET=0");
+}
+
+std::vector<DeviceSection> AmsBackendBttVivid::get_device_sections() const {
+    return helix::printer::btt_vivid_default_sections();
+}
+
+std::vector<DeviceAction> AmsBackendBttVivid::get_device_actions() const {
+    return helix::printer::btt_vivid_default_actions();
+}
+
+AmsError AmsBackendBttVivid::execute_device_action(const std::string& action_id, const std::any& value) {
+    if (action_id == "vivid_calibration_wizard") {
+        return execute_gcode("MMS_CALIBRATE"); // Adjust the actual macro name based on BTT Vivid's Klipper implementation
+    } else if (action_id == "vivid_test_lanes") {
+        return execute_gcode("MMS_TEST_LANES"); // Adjust this as well
+    }
+    
+    return AmsErrorHelper::not_supported(fmt::format("Action {} not implemented", action_id));
 }

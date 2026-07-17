@@ -771,6 +771,7 @@ struct AmsUnit {
     int first_slot_global_index = 0; ///< Global index of first slot
 
     std::vector<SlotInfo> slots; ///< Slot information
+    std::vector<float> buffer_pcts;
 
     // Unit-level status
     bool connected = false;                     ///< Unit communication status

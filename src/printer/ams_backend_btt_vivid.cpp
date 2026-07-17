@@ -466,9 +466,9 @@ std::vector<DeviceAction> AmsBackendBttVivid::get_device_actions() const {
     return helix::printer::btt_vivid_default_actions();
 }
 
-AmsError AmsBackendBttVivid::execute_device_action(const std::string& action_id, const std::any& value) {
+AmsError AmsBackendBttVivid::execute_device_action(const std::string& action_id, const std::any& /*value*/) {
     if (action_id == "vivid_calibration_wizard") {
-        return execute_gcode("MMS_CALIBRATE"); // Adjust the actual macro name based on BTT Vivid's Klipper implementation
+        return execute_gcode("MMS_BOWDEN_CALIBRATION");
     } else if (action_id == "vivid_test_lanes") {
         return execute_gcode("MMS_TEST_LANES"); // Adjust this as well
     }

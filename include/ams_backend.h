@@ -808,7 +808,7 @@ class AmsBackend {
      * @brief Pop filament out of the lane (async)
      * @param slot_index Lane to pop from (0-based)
      */
-    virtual AmsError pop_filament(int slot_index) {
+    virtual AmsError pop_filament(int /*slot_index*/) {
         return AmsErrorHelper::not_supported("Lane pop not supported");
     }
 

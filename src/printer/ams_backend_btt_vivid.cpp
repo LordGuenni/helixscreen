@@ -104,6 +104,7 @@ void AmsBackendBttVivid::handle_status_update(const nlohmann::json& notification
 }
 
 void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
+    int found_selector = -1;
     if (mms_data.contains("slots") && mms_data["slots"].is_object()) {
         const auto& slots_json = mms_data["slots"];
         if (slots_.slot_count() == 0) {
@@ -122,8 +123,6 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                 slot_segments_.resize(slots_.slot_count(), PathSegment::NONE);
             }
         }
-
-        int found_selector = -1;
 
         for (const auto& [key, slot_data] : slots_json.items()) {
             int slot_idx = -1;

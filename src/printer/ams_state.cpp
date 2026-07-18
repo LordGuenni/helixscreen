@@ -1432,8 +1432,8 @@ void AmsState::sync_from_backend() {
                 slot_brands_[i] = slot->brand;
                 any_slot_changed = true;
             }
-            if (slot_materials_[i] != slot->material) {
-                slot_materials_[i] = slot->material;
+            if (cached_materials_[i] != slot->material) {
+                cached_materials_[i] = slot->material;
                 any_slot_changed = true;
             }
             if (slot_bed_temps_[i] != slot->bed_temp) {

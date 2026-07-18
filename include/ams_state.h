@@ -1458,7 +1458,7 @@ class AmsState {
     
     // Cached non-subject fields used for change detection
     std::string slot_brands_[MAX_SLOTS];
-    std::string slot_materials_[MAX_SLOTS];
+    std::string cached_materials_[MAX_SLOTS];
     int slot_bed_temps_[MAX_SLOTS] = {0};
     int slot_nozzle_temps_[MAX_SLOTS] = {0};
 

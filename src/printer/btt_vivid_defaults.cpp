@@ -32,13 +32,80 @@ std::vector<DeviceAction> btt_vivid_default_actions() {
         .disable_reason = "",
     });
 
-    // Example macro mapping
+
     actions.push_back({
-        .id = "vivid_test_lanes",
-        .label = "Test All Lanes",
-        .icon = "test-tube",
+        .id = "vivid_slots_check",
+        .label = "Check All Slots",
+        .icon = "check-square",
         .section = "maintenance",
-        .description = "Run test sequence on all lanes",
+        .description = "Check the filament path for all slots",
+        .type = ActionType::BUTTON,
+        .current_value = {},
+        .options = {},
+        .min_value = 0,
+        .max_value = 0,
+        .unit = "",
+        .slot_index = -1,
+        .enabled = true,
+        .disable_reason = "",
+    });
+
+    actions.push_back({
+        .id = "vivid_slots_walk",
+        .label = "Walk All Slots",
+        .icon = "footprints",
+        .section = "maintenance",
+        .description = "Sequentially check and walk through all slots",
+        .type = ActionType::BUTTON,
+        .current_value = {},
+        .options = {},
+        .min_value = 0,
+        .max_value = 0,
+        .unit = "",
+        .slot_index = -1,
+        .enabled = true,
+        .disable_reason = "",
+    });
+    actions.push_back({
+        .id = "vivid_rfid_detect",
+        .label = "Detect RFID Tags",
+        .icon = "nfc",
+        .section = "setup",
+        .description = "Detect presence of RFID tags",
+        .type = ActionType::BUTTON,
+        .current_value = {},
+        .options = {},
+        .min_value = 0,
+        .max_value = 0,
+        .unit = "",
+        .slot_index = -1,
+        .enabled = true,
+        .disable_reason = "",
+    });
+
+    actions.push_back({
+        .id = "vivid_cut",
+        .label = "Cut Filament",
+        .icon = "scissors",
+        .section = "maintenance",
+        .description = "Perform a filament cut",
+        .type = ActionType::BUTTON,
+        .current_value = {},
+        .options = {},
+        .min_value = 0,
+        .max_value = 0,
+        .unit = "",
+        .slot_index = -1,
+        .enabled = true,
+        .disable_reason = "",
+    });
+
+    actions.push_back({
+        .id = "vivid_autoload_toggle",
+        .label = "Toggle Autoload",
+        .icon = "rotate-cw",
+        .section = "setup",
+        .description = "Enable or disable the autoload feature",
         .type = ActionType::BUTTON,
         .current_value = {},
         .options = {},

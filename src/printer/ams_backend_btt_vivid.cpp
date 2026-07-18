@@ -123,6 +123,8 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
             }
         }
 
+        int found_selector = -1;
+
         for (const auto& [key, slot_data] : slots_json.items()) {
             int slot_idx = -1;
             try {
@@ -135,6 +137,11 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                     if (slot_data.contains("is_empty")) {
                         bool is_empty = slot_data["is_empty"].get<bool>();
                         entry->info.status = is_empty ? SlotStatus::EMPTY : SlotStatus::AVAILABLE;
+                    }
+                    if (slot_data.contains("selector") && slot_data["selector"].get<int>() == 1) {
+                        found_selector = slot_idx;
+                    } else if (slot_data.contains("elector") && slot_data["elector"].get<int>() == 1) {
+                        found_selector = slot_idx;
                     }
                     
                     if (slot_data.contains("color") && slot_data["color"].is_string()) {
@@ -178,14 +185,24 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                         bool has_inlet = slot_data.contains("inlet") ? (slot_data["inlet"].get<int>() == 1) : 
                                          (slot_segments_[slot_idx] != PathSegment::NONE);
                         bool has_gate = slot_data.contains("gate") ? (slot_data["gate"].get<int>() == 1) : 
-                                        (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::LANE));
+                                        (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::PREP));
+                        bool has_runout = slot_data.contains("runout") ? (slot_data["runout"].get<int>() == 1) :
+                                        (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::HUB));
+                        bool has_outlet = slot_data.contains("outlet") ? (slot_data["outlet"].get<int>() == 1) :
+                                        (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::OUTPUT));
+                        bool has_entry = slot_data.contains("entry") ? (slot_data["entry"].get<int>() == 1) :
+                                        (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::TOOLHEAD));
 
-                        if (is_loaded) {
+                        if (is_loaded || has_entry) {
                             slot_segments_[slot_idx] = PathSegment::TOOLHEAD;
+                        } else if (has_outlet) {
+                            slot_segments_[slot_idx] = PathSegment::OUTPUT;
+                        } else if (has_runout) {
+                            slot_segments_[slot_idx] = PathSegment::HUB;
                         } else if (has_gate) {
-                            slot_segments_[slot_idx] = PathSegment::LANE; // Buffer entry
+                            slot_segments_[slot_idx] = PathSegment::PREP; // Buffer entry
                         } else if (has_inlet) {
-                            slot_segments_[slot_idx] = PathSegment::SPOOL;
+                            slot_segments_[slot_idx] = PathSegment::SPOOL; // Spool inserted
                         } else {
                             slot_segments_[slot_idx] = PathSegment::NONE;
                         }
@@ -248,23 +265,31 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
         }
     }
 
+    bool is_loaded = false;
+    int loaded_slot = -1;
     if (mms_data.contains("loading_slots") && mms_data["loading_slots"].is_array()) {
         auto loading = mms_data["loading_slots"];
         if (!loading.empty()) {
             if (loading[0].is_number_integer()) {
-                system_info_.current_slot = loading[0].get<int>();
+                loaded_slot = loading[0].get<int>();
+                is_loaded = true;
             } else if (loading[0].is_string()) {
-                try { system_info_.current_slot = std::stoi(loading[0].get<std::string>()); } catch (...) { system_info_.current_slot = -1; }
-            } else {
-                system_info_.current_slot = -1;
+                try { loaded_slot = std::stoi(loading[0].get<std::string>()); is_loaded = true; } catch (...) {}
             }
-        } else {
-            system_info_.current_slot = -1;
         }
     }
     
-    // BTT Vivid does not have a separate filament_loaded field, so infer it from current_slot
-    system_info_.filament_loaded = (system_info_.current_slot >= 0);
+    // Set current slot based on loaded filament, or selector position, or fallback to 0
+    if (is_loaded) {
+        system_info_.current_slot = loaded_slot;
+    } else if (found_selector >= 0) {
+        system_info_.current_slot = found_selector;
+    } else if (system_info_.current_slot < 0) {
+        system_info_.current_slot = 0;
+    }
+    
+    // BTT Vivid does not have a separate filament_loaded field, so infer it from loading_slots
+    system_info_.filament_loaded = is_loaded;
     
     // Update slot statuses with buffers and current slot
     for (int i = 0; i < slots_.slot_count(); ++i) {
@@ -357,18 +382,14 @@ AmsError AmsBackendBttVivid::validate_slot_index(int slot_index) const {
 
 AmsError AmsBackendBttVivid::load_filament(int slot_index) {
     if (auto err = validate_slot_index(slot_index); err.result != AmsResult::SUCCESS) return err;
-    return execute_gcode(fmt::format("MMS_LOAD SLOT={}", slot_index));
+    if (system_info_.filament_loaded && system_info_.current_slot != slot_index && system_info_.current_slot >= 0) {
+        return execute_gcode(fmt::format("MMS_EJECT\nMMS_CHARGE SLOT={}", slot_index));
+    }
+    return execute_gcode(fmt::format("MMS_CHARGE SLOT={}", slot_index));
 }
 
-AmsError AmsBackendBttVivid::unload_filament(int slot_index) {
-    if (slot_index >= 0) {
-        if (get_slot_filament_segment(slot_index) == PathSegment::TOOLHEAD) {
-            return execute_gcode("MMS_EJECT");
-        }
-        return execute_gcode(fmt::format("MMS_UNLOAD SLOT={}", slot_index));
-    } else {
-        return execute_gcode("MMS_EJECT");
-    }
+AmsError AmsBackendBttVivid::unload_filament(int /*slot_index*/) {
+    return execute_gcode("MMS_EJECT");
 }
 
 AmsError AmsBackendBttVivid::pop_filament(int slot_index) {
@@ -438,28 +459,35 @@ AmsError AmsBackendBttVivid::set_slot_info(int slot_index, const SlotInfo& info,
         return AmsErrorHelper::success();
     }
 
+    std::string cmds;
     std::string hex = fmt::format("{:06x}", info.color_rgb);
-    std::string cmd = fmt::format("MMS_SLOT_MAP SLOT={} COLOR='{}'", slot_index, hex);
+    cmds += fmt::format("MMS_SLOT_COLOR SLOT={} COLOR='{}'\n", slot_index, hex);
     
     if (!info.material.empty()) {
-        cmd += fmt::format(" MATERIAL='{}'", info.material);
-    }
-    if (!info.brand.empty()) {
-        cmd += fmt::format(" VENDOR='{}'", info.brand);
-    }
-    if (!info.color_name.empty()) {
-        cmd += fmt::format(" NAME='{}'", info.color_name);
-    }
-    if (info.bed_temp > 0) {
-        cmd += fmt::format(" BED_TEMP={}", info.bed_temp);
-    }
-    if (info.nozzle_temp_min > 0) {
-        cmd += fmt::format(" NOZZLE_TEMP={}", info.nozzle_temp_min);
+        cmds += fmt::format("MMS_SLOT_MATERIAL SLOT={} MATERIAL='{}'\n", slot_index, info.material);
     }
     
-    cmd += fmt::format(" SPOOLID={}", info.spoolman_id > 0 ? info.spoolman_id : -1);
+    // For other meta attributes, use MMS_SLOT_META
+    if (!info.brand.empty()) {
+        cmds += fmt::format("MMS_SLOT_META SLOT={} KEY='vendor' VALUE='{}'\n", slot_index, info.brand);
+    }
+    if (!info.color_name.empty()) {
+        cmds += fmt::format("MMS_SLOT_META SLOT={} KEY='name' VALUE='{}'\n", slot_index, info.color_name);
+    }
+    if (info.bed_temp > 0) {
+        cmds += fmt::format("MMS_SLOT_META SLOT={} KEY='bed_temp' VALUE='{}'\n", slot_index, info.bed_temp);
+    }
+    if (info.nozzle_temp_min > 0) {
+        cmds += fmt::format("MMS_SLOT_META SLOT={} KEY='nozzle_temp' VALUE='{}'\n", slot_index, info.nozzle_temp_min);
+    }
+    
+    if (info.spoolman_id > 0) {
+        cmds += fmt::format("MMS_SLOT_SPOOL SLOT={} SPOOL_ID={}\n", slot_index, info.spoolman_id);
+    } else {
+        cmds += fmt::format("MMS_SLOT_SPOOL SLOT={} SPOOL_ID=-1\n", slot_index);
+    }
 
-    execute_gcode(cmd);
+    execute_gcode(cmds);
 
     return AmsErrorHelper::success();
 }
@@ -478,11 +506,11 @@ DryerInfo AmsBackendBttVivid::get_dryer_info(int /*unit*/) const {
 }
 
 AmsError AmsBackendBttVivid::start_drying(float temp_c, int /*duration_min*/, int /*fan_pct*/, int /*unit*/) {
-    return execute_gcode(fmt::format("SET_HEATER_TEMPERATURE HEATER=ViViD_Dryer TARGET={}", temp_c));
+    return execute_gcode(fmt::format("MMS_DRYER_START TEMP={}", temp_c));
 }
 
 AmsError AmsBackendBttVivid::stop_drying(int /*unit*/) {
-    return execute_gcode("SET_HEATER_TEMPERATURE HEATER=ViViD_Dryer TARGET=0");
+    return execute_gcode("MMS_DRYER_STOP");
 }
 
 std::vector<DeviceSection> AmsBackendBttVivid::get_device_sections() const {
@@ -496,8 +524,17 @@ std::vector<DeviceAction> AmsBackendBttVivid::get_device_actions() const {
 AmsError AmsBackendBttVivid::execute_device_action(const std::string& action_id, const std::any& /*value*/) {
     if (action_id == "vivid_calibration_wizard") {
         return execute_gcode("MMS_BOWDEN_CALIBRATION");
-    } else if (action_id == "vivid_test_lanes") {
-        return execute_gcode("MMS_TEST_LANES"); // Adjust this as well
+    } else if (action_id == "vivid_slots_check") {
+        return execute_gcode("MMS_SLOTS_CHECK");
+    } else if (action_id == "vivid_slots_walk") {
+        return execute_gcode("MMS_SLOTS_WALK");
+    } else if (action_id == "vivid_rfid_detect") {
+        return execute_gcode("MMS_RFID_DETECT");
+    } else if (action_id == "vivid_cut") {
+        return execute_gcode("MMS_CUT");
+    } else if (action_id == "vivid_autoload_toggle") {
+        // Toggle autoload is currently sent as enable, consider full toggle if state is available
+        return execute_gcode("MMS_AUTOLOAD_ENABLE");
     }
     
     return AmsErrorHelper::not_supported(fmt::format("Action {} not implemented", action_id));

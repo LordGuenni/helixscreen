@@ -46,6 +46,9 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     [[nodiscard]] bool supports_gate_select() const override { return true; }
     AmsError select_gate(int slot_index) override;
     AmsError move_selector(int delta) override;
+    [[nodiscard]] bool supports_auto_heat_on_load() const override { return true; }
+    [[nodiscard]] bool slot_has_prep_sensor(int /*slot_index*/) const override { return true; }
+    [[nodiscard]] bool needs_unload_before_load(const AmsSystemInfo& /*info*/) const override { return false; }
 
     // Recovery
     AmsError recover() override;

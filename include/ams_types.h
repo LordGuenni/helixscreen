@@ -106,10 +106,13 @@ inline AmsType ams_type_from_string(std::string_view str) {
     if (str == "cfs" || str == "CFS" || str == "box") {
         return AmsType::CFS;
     }
-    if (str == "snapmaker" || str == "snapswap" || str == "Snapmaker" || str == "SnapSwap") {
+    if (str == "snapmaker" || str == "Snapmaker" || str == "snapswap" || str == "SnapSwap") {
         return AmsType::SNAPMAKER;
     }
-    if (str == "qidi_box" || str == "QIDI_BOX" || str == "qidi box" || str == "QIDI Box") {
+    // QIDI Box: QIDI's 4-slot hub-style filament changer (PLUS4 / Q2 / MAX4).
+    // Note: the bare "box" alias is already claimed by CFS above, so QIDI Box
+    // requires the explicit "qidi_box" / "QIDI Box" spelling.
+    if (str == "qidi_box" || str == "QIDI Box" || str == "qidibox") {
         return AmsType::QIDI_BOX;
     }
     if (str == "btt_vivid" || str == "btt vivid" || str == "vivid" || str == "mms") {
@@ -769,7 +772,6 @@ struct AmsUnit {
     int first_slot_global_index = 0; ///< Global index of first slot
 
     std::vector<SlotInfo> slots; ///< Slot information
-    std::vector<float> buffer_pcts;
 
     // Unit-level status
     bool connected = false;                     ///< Unit communication status

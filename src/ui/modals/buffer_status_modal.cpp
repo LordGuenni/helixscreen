@@ -206,10 +206,8 @@ void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) 
         bool found_pct = false;
         if (effective_unit >= 0 && effective_unit < static_cast<int>(info.units.size())) {
             const auto& unit = info.units[effective_unit];
-            if (!unit.buffer_pcts.empty()) {
-                // If there's only 1 buffer or we aggregate them, let's just use the max/active one
-                // Usually BTT Vivid has 1 buffer reported at index 0.
-                float pct = unit.buffer_pcts[0];
+            if (unit.buffer_health.has_value()) {
+                float pct = unit.buffer_health->distance_to_fault;
                 if (pct >= 0.0f) {
                     found_pct = true;
                     auto s = fmt::format("{:.1f} %", pct);

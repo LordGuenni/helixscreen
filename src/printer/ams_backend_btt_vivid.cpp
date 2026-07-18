@@ -295,6 +295,9 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
             if (b.contains("pct") && b["pct"].is_number()) {
                 float pct = b["pct"].get<float>();
                 
+                if (buffer_pcts_.empty()) buffer_pcts_.resize(1);
+                buffer_pcts_[0] = pct;
+                
                 // Map the buffer percentage into the UI's clog detection arc meter
                 system_info_.clog_detection = 2; // Auto
                 system_info_.encoder_info.enabled = true;
@@ -305,8 +308,39 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                 system_info_.encoder_info.min_headroom = 100.0f - pct;
                 system_info_.encoder_info.detection_mode = 2;
             }
+            if (b.contains("is_activating") && b["is_activating"].is_boolean()) {
+                is_activating_ = b["is_activating"].get<bool>();
+            }
         }
     }
+    
+    if (mms_data.contains("progress") && mms_data["progress"].is_object()) {
+        const auto& p = mms_data["progress"];
+        int heat = p.value("heat", 100);
+        int cut = p.value("cut", 100);
+        int feed = p.value("feed", 100);
+        int purge = p.value("purge", 100);
+        
+        AmsAction prev_action = system_info_.action;
+        
+        if (heat < 100) {
+            system_info_.action = AmsAction::HEATING;
+            system_info_.operation_detail = "Heating";
+        } else if (cut < 100) {
+            system_info_.action = AmsAction::CUTTING;
+            system_info_.operation_detail = "Cutting";
+        } else if (feed < 100) {
+            system_info_.action = AmsAction::LOADING;
+            system_info_.operation_detail = "Feeding";
+        } else if (purge < 100) {
+            system_info_.action = AmsAction::PURGING;
+            system_info_.operation_detail = "Purging";
+        } else {
+            system_info_.action = AmsAction::IDLE;
+            system_info_.operation_detail = "";
+        }
+    }
+    
     
     // Set current slot based on loaded filament or selector position
     if (is_loaded) {
@@ -350,9 +384,9 @@ AmsSystemInfo AmsBackendBttVivid::get_system_info() const {
             info.units[0].environment = env;
         }
 
-        // Copy over buffer pcts that were populated in parse_mms_state
-        if (!buffer_pcts_.empty()) {
-            info.units[0].buffer_pcts = buffer_pcts_;
+        // Map the first buffer's percentage into buffer_health to avoid ams_types bloat
+        if (!buffer_pcts_.empty() && buffer_pcts_[0] >= 0.0f) {
+            info.units[0].buffer_health = BufferHealth{is_activating_, buffer_pcts_[0], 0.0f, "Vivid"};
         }
     }
     

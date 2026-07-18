@@ -563,7 +563,7 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     // unit_index == -1 means single-unit view (use unit 0)
     int buffer_fault = 0; // 0=healthy, 1=warning, 2=fault
     int effective_unit = (unit_index >= 0) ? unit_index : 0;
-    if (effective_unit < static_cast<int>(info.units.size())) {
+    if (info.type != AmsType::BTT_VIVID && effective_unit < static_cast<int>(info.units.size())) {
         const auto& unit = info.units[effective_unit];
         if (unit.buffer_health.has_value() && unit.buffer_health->fault_detection_enabled &&
             unit.buffer_health->distance_to_fault >= 0.0f) {
@@ -584,12 +584,12 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
             buffer_fault = 1;
         }
     }
-    // BTT Vivid uses buffer_pcts mapping: <5% or >95% is fault, <20% or >80% is warning.
+    // BTT Vivid uses buffer_health->distance_to_fault mapping: <5% or >95% is fault, <20% or >80% is warning.
     if (buffer_fault == 0 && info.type == AmsType::BTT_VIVID) {
         if (effective_unit < static_cast<int>(info.units.size())) {
             const auto& unit = info.units[effective_unit];
-            if (!unit.buffer_pcts.empty()) {
-                float pct = unit.buffer_pcts[0];
+            if (unit.buffer_health.has_value() && unit.buffer_health->fault_detection_enabled) {
+                float pct = unit.buffer_health->distance_to_fault;
                 if (pct >= 0.0f) {
                     if (pct < 5.0f || pct > 95.0f) {
                         buffer_fault = 2;

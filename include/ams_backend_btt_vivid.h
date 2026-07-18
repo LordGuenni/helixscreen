@@ -102,4 +102,5 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     std::vector<bool> buffer_triggered_;
     std::vector<PathSegment> slot_segments_;
     std::vector<float> buffer_pcts_;
+    bool is_activating_ = false;
 };

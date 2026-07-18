@@ -298,15 +298,8 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                 if (buffer_pcts_.empty()) buffer_pcts_.resize(1);
                 buffer_pcts_[0] = pct;
                 
-                // Map the buffer percentage into the UI's clog detection arc meter
-                system_info_.clog_detection = 2; // Auto
-                system_info_.encoder_info.enabled = true;
-                system_info_.encoder_info.flow_rate = static_cast<int>(pct);
-                system_info_.encoder_info.detection_length = 100.0f;
-                system_info_.encoder_info.headroom = 100.0f - pct;
-                system_info_.encoder_info.desired_headroom = 10.0f; // Warn at 90% full
-                system_info_.encoder_info.min_headroom = 100.0f - pct;
-                system_info_.encoder_info.detection_mode = 2;
+                // BTT Vivid uses a physical spring buffer (0% = empty, 100% = full, 50% = ideal)
+                // We'll map this to sync_feedback_bias in get_system_info() for the UiBufferMeter
             }
             if (b.contains("is_activating") && b["is_activating"].is_boolean()) {
                 is_activating_ = b["is_activating"].get<bool>();
@@ -384,9 +377,13 @@ AmsSystemInfo AmsBackendBttVivid::get_system_info() const {
             info.units[0].environment = env;
         }
 
-        // Map the first buffer's percentage into buffer_health to avoid ams_types bloat
+        // Map the first buffer's percentage into buffer_health and bias
         if (!buffer_pcts_.empty() && buffer_pcts_[0] >= 0.0f) {
             info.units[0].buffer_health = BufferHealth{is_activating_, buffer_pcts_[0], 0.0f, "Vivid"};
+            
+            // pct 0 = empty (-1.0 bias), pct 100 = full (1.0 bias), pct 50 = ideal (0.0 bias)
+            info.sync_feedback_bias = (buffer_pcts_[0] - 50.0f) / 50.0f;
+            info.sync_feedback_bias_raw = info.sync_feedback_bias;
         }
     }
     

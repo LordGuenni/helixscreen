@@ -468,7 +468,7 @@ std::unique_ptr<AmsBackend> AmsBackend::create(AmsType detected_type, MoonrakerA
             spdlog::error("[AMS Backend] QIDI Box requires MoonrakerAPI and MoonrakerClient");
             return nullptr;
         }
-        spdlog::debug("[AMS Backend] Creating QIDI Box backend");
+        spdlog::debug("[AMS Backend] Creating QIDI Box backend (stub)");
         return std::make_unique<AmsBackendQidi>(api, client);
 
     case AmsType::BTT_VIVID:

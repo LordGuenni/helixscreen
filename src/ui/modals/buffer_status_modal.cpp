@@ -200,8 +200,9 @@ void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) 
             lv_subject_copy_string(&clog_value_subject_, lv_tr("Unknown"));
         }
     } else if (info.type == AmsType::BTT_VIVID) {
+        bool has_bias_vivid = info.sync_feedback_bias > -1.5f;
         lv_subject_set_int(&type_subject_, 3);
-        lv_subject_set_int(&show_meter_subject_, 0);
+        lv_subject_set_int(&show_meter_subject_, has_bias_vivid ? 1 : 0);
 
         bool found_pct = false;
         if (effective_unit >= 0 && effective_unit < static_cast<int>(info.units.size())) {
@@ -245,7 +246,7 @@ void BufferStatusModal::on_show() {
     }
 
     // Create UiBufferMeter programmatically in the meter column
-    bool has_bias = info_.type == AmsType::HAPPY_HARE && info_.sync_feedback_bias > -1.5f;
+    bool has_bias = (info_.type == AmsType::HAPPY_HARE || info_.type == AmsType::BTT_VIVID) && info_.sync_feedback_bias > -1.5f;
     if (has_bias && dialog()) {
         lv_obj_t* meter_col = lv_obj_find_by_name(dialog(), "meter_col");
         if (meter_col) {

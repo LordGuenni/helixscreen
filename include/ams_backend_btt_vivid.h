@@ -44,6 +44,11 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     AmsError change_tool(int tool_number) override;
     
     [[nodiscard]] bool supports_gate_select() const override { return true; }
+    
+    [[nodiscard]] bool supports_sync_feedback_visualization(const AmsSystemInfo&) const override {
+        return true;
+    }
+    
     AmsError select_gate(int slot_index) override;
     AmsError move_selector(int delta) override;
     [[nodiscard]] bool supports_auto_heat_on_load() const override { return true; }

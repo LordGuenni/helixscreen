@@ -314,8 +314,6 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
         int feed = p.value("feed", 100);
         int purge = p.value("purge", 100);
         
-        AmsAction prev_action = system_info_.action;
-        
         if (heat < 100) {
             system_info_.action = AmsAction::HEATING;
             system_info_.operation_detail = "Heating";
@@ -378,7 +376,14 @@ AmsSystemInfo AmsBackendBttVivid::get_system_info() const {
         }
 
         // Map the first buffer's percentage into buffer_health and bias
-        if (!buffer_pcts_.empty() && buffer_pcts_[0] >= 0.0f) {
+        // Only expose this when printing, as the idle buffer state is irrelevant
+        bool is_printing = false;
+        if (api_) {
+            const auto pstate = api_->printer_state().get_print_job_state();
+            is_printing = (pstate == helix::PrintJobState::PRINTING || pstate == helix::PrintJobState::PAUSED);
+        }
+
+        if (is_printing && !buffer_pcts_.empty() && buffer_pcts_[0] >= 0.0f) {
             info.units[0].buffer_health = BufferHealth{is_activating_, buffer_pcts_[0], 0.0f, "Vivid"};
             
             // pct 0 = empty (-1.0 bias), pct 100 = full (1.0 bias), pct 50 = ideal (0.0 bias)
@@ -440,13 +445,13 @@ AmsError AmsBackendBttVivid::validate_slot_index(int slot_index) const {
 AmsError AmsBackendBttVivid::load_filament(int slot_index) {
     if (auto err = validate_slot_index(slot_index); err.result != AmsResult::SUCCESS) return err;
     if (system_info_.filament_loaded && system_info_.current_slot != slot_index && system_info_.current_slot >= 0) {
-        return execute_gcode(fmt::format("MMS_EJECT\nMMS_CHARGE SLOT={}", slot_index));
+        return ensure_homed_then(fmt::format("MMS_EJECT\nMMS_CHARGE SLOT={}", slot_index));
     }
-    return execute_gcode(fmt::format("MMS_CHARGE SLOT={}", slot_index));
+    return ensure_homed_then(fmt::format("MMS_CHARGE SLOT={}", slot_index));
 }
 
 AmsError AmsBackendBttVivid::unload_filament(int /*slot_index*/) {
-    return execute_gcode("MMS_EJECT");
+    return ensure_homed_then("MMS_EJECT");
 }
 
 

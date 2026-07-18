@@ -3317,7 +3317,6 @@ std::vector<helix::printer::DeviceAction> AmsBackendAfc::get_device_actions() co
     // Config save state
     bool has_changes = (afc_config_ && afc_config_->has_unsaved_changes()) ||
                        (macro_vars_config_ && macro_vars_config_->has_unsaved_changes());
-    (void)has_changes;
 
     for (auto& a : actions) {
         // Hub & Cutter actions — from afc_config_ hub section

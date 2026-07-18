@@ -805,22 +805,6 @@ class AmsBackend {
     }
 
     /**
-     * @brief Pop filament out of the lane (async)
-     * @param slot_index Lane to pop from (0-based)
-     */
-    virtual AmsError pop_filament(int /*slot_index*/) {
-        return AmsErrorHelper::not_supported("Lane pop not supported");
-    }
-
-    /**
-     * @brief Check if per-lane pop is supported
-     * @return true if pop_filament() is implemented
-     */
-    [[nodiscard]] virtual bool supports_pop_filament() const {
-        return false;
-    }
-
-    /**
      * @brief Display label for the sidebar reset()-button.
      *
      * Backends where reset() is a genuine reset keep "Reset"; selector-based

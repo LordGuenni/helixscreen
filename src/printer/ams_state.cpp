@@ -1426,24 +1426,6 @@ void AmsState::sync_from_backend() {
                 lv_subject_set_int(&slot_active_loaded_[i], new_active);
                 any_slot_changed = true;
             }
-
-            // Check non-subject fields for changes
-            if (slot_brands_[i] != slot->brand) {
-                slot_brands_[i] = slot->brand;
-                any_slot_changed = true;
-            }
-            if (cached_materials_[i] != slot->material) {
-                cached_materials_[i] = slot->material;
-                any_slot_changed = true;
-            }
-            if (slot_bed_temps_[i] != slot->bed_temp) {
-                slot_bed_temps_[i] = slot->bed_temp;
-                any_slot_changed = true;
-            }
-            if (slot_nozzle_temps_[i] != slot->nozzle_temp_min) {
-                slot_nozzle_temps_[i] = slot->nozzle_temp_min;
-                any_slot_changed = true;
-            }
         }
     }
 

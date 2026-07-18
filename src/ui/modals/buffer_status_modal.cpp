@@ -32,8 +32,6 @@ lv_subject_t BufferStatusModal::afc_state_subject_;
 char BufferStatusModal::afc_state_buf_[128]{};
 lv_subject_t BufferStatusModal::afc_distance_subject_;
 char BufferStatusModal::afc_distance_buf_[128]{};
-lv_subject_t BufferStatusModal::btt_fill_subject_;
-char BufferStatusModal::btt_fill_buf_[32]{};
 
 BufferStatusModal::BufferStatusModal() {
     init_subjects();
@@ -68,7 +66,6 @@ void BufferStatusModal::init_subjects() {
                            "");
     lv_subject_init_string(&afc_distance_subject_, afc_distance_buf_, nullptr,
                            sizeof(afc_distance_buf_), "");
-    lv_subject_init_string(&btt_fill_subject_, btt_fill_buf_, nullptr, sizeof(btt_fill_buf_), "");
 
     lv_xml_register_subject(nullptr, "buf_type", &type_subject_);
     lv_xml_register_subject(nullptr, "buf_show_meter", &show_meter_subject_);
@@ -82,7 +79,6 @@ void BufferStatusModal::init_subjects() {
     lv_xml_register_subject(nullptr, "buf_flow_value", &flow_value_subject_);
     lv_xml_register_subject(nullptr, "buf_afc_state", &afc_state_subject_);
     lv_xml_register_subject(nullptr, "buf_afc_distance", &afc_distance_subject_);
-    lv_xml_register_subject(nullptr, "buf_btt_fill", &btt_fill_subject_);
 
     subjects_initialized_ = true;
 }
@@ -198,27 +194,6 @@ void BufferStatusModal::populate(const AmsSystemInfo& info, int effective_unit) 
             lv_subject_copy_string(&afc_state_subject_, lv_tr("No buffer data available"));
             lv_subject_set_int(&show_distance_subject_, 0);
             lv_subject_copy_string(&clog_value_subject_, lv_tr("Unknown"));
-        }
-    } else if (info.type == AmsType::BTT_VIVID) {
-        lv_subject_set_int(&type_subject_, 3);
-        lv_subject_set_int(&show_meter_subject_, 0);
-
-        bool found_pct = false;
-        if (effective_unit >= 0 && effective_unit < static_cast<int>(info.units.size())) {
-            const auto& unit = info.units[effective_unit];
-            if (!unit.buffer_pcts.empty()) {
-                // If there's only 1 buffer or we aggregate them, let's just use the max/active one
-                // Usually BTT Vivid has 1 buffer reported at index 0.
-                float pct = unit.buffer_pcts[0];
-                if (pct >= 0.0f) {
-                    found_pct = true;
-                    auto s = fmt::format("{:.1f} %", pct);
-                    lv_subject_copy_string(&btt_fill_subject_, s.c_str());
-                }
-            }
-        }
-        if (!found_pct) {
-            lv_subject_copy_string(&btt_fill_subject_, lv_tr("Unknown"));
         }
     } else {
         lv_subject_set_int(&type_subject_, 0);

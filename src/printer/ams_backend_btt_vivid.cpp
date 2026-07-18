@@ -308,13 +308,11 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
         }
     }
     
-    // Set current slot based on loaded filament, or selector position, or fallback to 0
+    // Set current slot based on loaded filament or selector position
     if (is_loaded) {
         system_info_.current_slot = loaded_slot;
-    } else if (found_selector >= 0) {
+    } else {
         system_info_.current_slot = found_selector;
-    } else if (system_info_.current_slot < 0) {
-        system_info_.current_slot = 0;
     }
     
     // BTT Vivid does not have a separate filament_loaded field, so infer it from loading_slots
@@ -378,7 +376,6 @@ SlotInfo AmsBackendBttVivid::get_slot_info(int slot_index) const {
 }
 
 PathTopology AmsBackendBttVivid::get_topology() const {
-    // BTT Vivid (MMS) uses individual buffers for each lane merging into a hub
     return PathTopology::HUB;
 }
 

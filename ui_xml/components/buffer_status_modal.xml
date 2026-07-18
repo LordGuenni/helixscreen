@@ -96,20 +96,6 @@
           </lv_obj>
         </lv_obj>
 
-        <!-- ============ BTT Vivid section ============ -->
-        <lv_obj name="btt_section" width="100%" height="content"
-                flex_flow="column" style_pad_gap="#space_xs">
-          <bind_flag_if_not_eq subject="buf_type" flag="hidden" ref_value="3"/>
-
-          <!-- Buffer fill row -->
-          <lv_obj width="100%" height="content"
-                  flex_flow="row" style_pad_gap="#space_sm">
-            <text_small name="lbl_btt_fill" text="Buffer Usage" translation_tag="Buffer Usage"
-                        width="110"/>
-            <text_small name="val_btt_fill" bind_text="buf_btt_fill" flex_grow="1"/>
-          </lv_obj>
-        </lv_obj>
-
       </lv_obj>
 
       <!-- Meter column (programmatically populated with UiBufferMeter) -->

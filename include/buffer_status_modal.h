@@ -66,8 +66,6 @@ class BufferStatusModal : public Modal {
     static char afc_state_buf_[128];
     static lv_subject_t afc_distance_subject_;
     static char afc_distance_buf_[128];
-    static lv_subject_t btt_fill_subject_;
-    static char btt_fill_buf_[32];
 
     // Stored info for post-show meter creation
     AmsSystemInfo info_;

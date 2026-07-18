@@ -1455,12 +1455,6 @@ class AmsState {
     lv_subject_t slot_segments_[MAX_SLOTS];         // int: PathSegment enum value
     lv_subject_t slot_toolhead_present_[MAX_SLOTS]; // int: 0/1 per-slot toolhead sensor
     lv_subject_t slot_active_loaded_[MAX_SLOTS];    // int: 0/1 firmware seated & loaded
-    
-    // Cached non-subject fields used for change detection
-    std::string slot_brands_[MAX_SLOTS];
-    std::string cached_materials_[MAX_SLOTS];
-    int slot_bed_temps_[MAX_SLOTS] = {0};
-    int slot_nozzle_temps_[MAX_SLOTS] = {0};
 
     // Per-unit environment subjects (CFS temp/humidity)
     lv_subject_t unit_temp_[MAX_UNITS];     // int: tenths of C (270 = 27.0C), 0 = no data

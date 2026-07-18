@@ -54,8 +54,7 @@ class AmsContextMenu : public ContextMenu {
         EDIT,        ///< Edit slot properties
         CLEAR_SPOOL, ///< Clear assigned spool from empty slot
         SPOOLMAN,    ///< Assign Spoolman spool
-        SCAN_QR,     ///< Scan QR code to assign spool
-        POP_SPOOL    ///< Pop filament from slot (BTT Vivid)
+        SCAN_QR      ///< Scan QR code to assign spool
     };
 
     using ActionCallback = std::function<void(MenuAction action, int slot_index)>;
@@ -159,7 +158,6 @@ class AmsContextMenu : public ContextMenu {
     void handle_scan_qr();
     void handle_tool_changed();
     void handle_backup_changed();
-    void handle_pop();
 
     // === Dropdown Configuration ===
     void configure_dropdowns();
@@ -189,7 +187,6 @@ class AmsContextMenu : public ContextMenu {
     static void on_scan_qr_cb(lv_event_t* e);
     static void on_tool_changed_cb(lv_event_t* e);
     static void on_backup_changed_cb(lv_event_t* e);
-    static void on_pop_cb(lv_event_t* e);
 };
 
 } // namespace helix::ui

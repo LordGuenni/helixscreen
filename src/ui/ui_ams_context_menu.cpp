@@ -313,13 +313,7 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
         }
     }
 
-    // Unhide the "Pop" button if the backend supports it
-    if (backend_ && backend_->supports_pop_filament()) {
-        lv_obj_t* btn_pop = lv_obj_find_by_name(menu_obj, "btn_pop_slot");
-        if (btn_pop) {
-            lv_obj_remove_flag(btn_pop, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+
 
     // QIDI Box: a lane with ejectable filament but [force_move] enable_force_move
     // off means eject is unavailable (supports_lane_eject() is false). Surface a
@@ -495,11 +489,6 @@ void AmsContextMenu::handle_scan_qr() {
     dispatch_ams_action(MenuAction::SCAN_QR);
 }
 
-void AmsContextMenu::handle_pop() {
-    spdlog::info("[AmsContextMenu] Pop requested for slot {}", get_item_index());
-    dispatch_ams_action(MenuAction::POP_SPOOL);
-}
-
 // ============================================================================
 // Static Callback Registration
 // ============================================================================
@@ -522,7 +511,6 @@ void AmsContextMenu::register_callbacks() {
         {"ams_context_scan_qr_cb", on_scan_qr_cb},
         {"ams_context_tool_changed_cb", on_tool_changed_cb},
         {"ams_context_backup_changed_cb", on_backup_changed_cb},
-        {"ams_context_pop_cb", on_pop_cb},
     });
 
     callbacks_registered_ = true;
@@ -621,13 +609,6 @@ void AmsContextMenu::on_backup_changed_cb(lv_event_t* /*e*/) {
     auto* self = get_active_instance();
     if (self) {
         self->handle_backup_changed();
-    }
-}
-
-void AmsContextMenu::on_pop_cb(lv_event_t* /*e*/) {
-    auto* self = get_active_instance();
-    if (self) {
-        self->handle_pop();
     }
 }
 

@@ -376,19 +376,28 @@ AmsSystemInfo AmsBackendBttVivid::get_system_info() const {
         }
 
         // Map the first buffer's percentage into buffer_health and bias
-        // Only expose this when printing, as the idle buffer state is irrelevant
-        bool is_printing = false;
-        if (api_) {
-            const auto pstate = api_->printer_state().get_print_job_state();
-            is_printing = (pstate == helix::PrintJobState::PRINTING || pstate == helix::PrintJobState::PAUSED);
-        }
-
-        if (is_printing && !buffer_pcts_.empty() && buffer_pcts_[0] >= 0.0f) {
+        if (!buffer_pcts_.empty() && buffer_pcts_[0] >= 0.0f) {
             info.units[0].buffer_health = BufferHealth{is_activating_, buffer_pcts_[0], 0.0f, "Vivid"};
             
-            // pct 0 = empty (-1.0 bias), pct 100 = full (1.0 bias), pct 50 = ideal (0.0 bias)
-            info.sync_feedback_bias = (buffer_pcts_[0] - 50.0f) / 50.0f;
-            info.sync_feedback_bias_raw = info.sync_feedback_bias;
+            // Only expose continuous bias mapping for UI visualizations when the buffer is actively feeding
+            if (is_activating_) {
+                float pct = buffer_pcts_[0];
+                float bias = 0.0f;
+                
+                // Map Vivid thresholds (20/80 warning, 5/95 fault) to the generic UI thresholds (0.3 warning, 0.7 fault)
+                if (pct >= 50.0f) {
+                    if (pct <= 80.0f)      bias = (pct - 50.0f) / 30.0f * 0.3f;              // 50-80 -> 0.0-0.3
+                    else if (pct <= 95.0f) bias = 0.3f + (pct - 80.0f) / 15.0f * 0.4f;       // 80-95 -> 0.3-0.7
+                    else                   bias = 0.7f + (pct - 95.0f) / 5.0f * 0.3f;        // 95-100 -> 0.7-1.0
+                } else {
+                    if (pct >= 20.0f)      bias = (pct - 50.0f) / 30.0f * 0.3f;              // 50-20 -> 0.0 - -0.3
+                    else if (pct >= 5.0f)  bias = -0.3f - (20.0f - pct) / 15.0f * 0.4f;      // 20-5 -> -0.3 - -0.7
+                    else                   bias = -0.7f - (5.0f - pct) / 5.0f * 0.3f;        // 5-0 -> -0.7 - -1.0
+                }
+                
+                info.sync_feedback_bias = std::clamp(bias, -1.0f, 1.0f);
+                info.sync_feedback_bias_raw = (pct - 50.0f) / 50.0f; // Expose the true linear mapping
+            }
         }
     }
     

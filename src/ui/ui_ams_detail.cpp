@@ -577,11 +577,13 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
     // HH sync feedback → fault state based on bias magnitude
     // Use same thresholds as buffer meter: <0.3 green, 0.3-0.7 orange, >0.7 red
     if (buffer_fault == 0 && backend->supports_sync_feedback_visualization(info)) {
-        float abs_bias = std::fabs(info.sync_feedback_bias);
-        if (abs_bias >= 0.7f) {
-            buffer_fault = 2;
-        } else if (abs_bias >= 0.3f) {
-            buffer_fault = 1;
+        if (info.sync_feedback_bias > -1.5f) {
+            float abs_bias = std::fabs(info.sync_feedback_bias);
+            if (abs_bias >= 0.7f) {
+                buffer_fault = 2;
+            } else if (abs_bias >= 0.3f) {
+                buffer_fault = 1;
+            }
         }
     }
     // BTT Vivid uses buffer_health->distance_to_fault mapping: <5% or >95% is fault, <20% or >80% is warning.

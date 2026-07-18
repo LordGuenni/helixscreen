@@ -45,8 +45,8 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     
     [[nodiscard]] bool supports_gate_select() const override { return true; }
     
-    [[nodiscard]] bool supports_sync_feedback_visualization(const AmsSystemInfo&) const override {
-        return true;
+    [[nodiscard]] bool supports_sync_feedback_visualization(const AmsSystemInfo& info) const override {
+        return info.sync_feedback_bias > -1.5f;
     }
     
     AmsError select_gate(int slot_index) override;

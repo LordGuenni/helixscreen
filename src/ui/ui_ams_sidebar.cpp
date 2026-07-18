@@ -27,6 +27,9 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace helix::ui {
 
 // ============================================================================
@@ -161,10 +164,38 @@ bool AmsOperationSidebar::setup(lv_obj_t* panel) {
     update_settings_visibility();
 
     active_ = true;
+
+    // Independent stall watchdog for the indeterminate "Working…" state (#1065
+    // row 14). Runs on the main loop; the callback no-ops unless an op is active.
+    if (!stall_watchdog_timer_) {
+        stall_watchdog_timer_ = lv_timer_create(stall_watchdog_cb, kStallWatchdogPeriodMs, this);
+    }
+
     sync_reset_button_label();
     update_check_gates_visibility();
     spdlog::debug("[AmsSidebar] Setup complete");
     return true;
+}
+
+void AmsOperationSidebar::stall_watchdog_cb(lv_timer_t* timer) {
+    auto* self = static_cast<AmsOperationSidebar*>(lv_timer_get_user_data(timer));
+    if (!self || !self->active_) {
+        return;
+    }
+    // Only poke the backend while a filament op is in progress — an idle AMS
+    // panel needs no watchdog. AmsAction::IDLE == 0.
+    lv_subject_t* action = AmsState::instance().get_ams_action_subject();
+    if (action && lv_subject_get_int(action) == 0) {
+        return;
+    }
+    // A blocking load/unload macro can starve the WebSocket status feed on the
+    // 2-core AD5X, freezing the live-temp readout and the feed-driven stall
+    // check together. Drive the check on this independent clock:
+    // sync_from_backend() -> get_system_info() -> check_action_timeout() flips
+    // ams_operation_indeterminate, and indeterminate_observer_ swaps the Heat
+    // step to "Working…" (#1065 row 14). This is a no-op when a healthy feed is
+    // already keeping the flag clear.
+    AmsState::instance().sync_from_backend();
 }
 
 void AmsOperationSidebar::setup_step_progress() {
@@ -313,6 +344,13 @@ void AmsOperationSidebar::init_observers() {
 void AmsOperationSidebar::cleanup() {
     // Clear active flag FIRST to prevent observer callbacks from using freed widgets
     active_ = false;
+
+    // Delete the stall watchdog before anything else so its main-thread callback
+    // can't fire mid-teardown (it never outlives the sidebar this way).
+    if (stall_watchdog_timer_) {
+        lv_timer_delete(stall_watchdog_timer_);
+        stall_watchdog_timer_ = nullptr;
+    }
 
     // Nullify widget refs BEFORE resetting observers — any cascading observer
     // callbacks that slip through the active_ guard will see null pointers and
@@ -925,6 +963,10 @@ void AmsOperationSidebar::handle_unload(int slot_index) {
         return;
     }
 
+    // Filament is being pulled — drop the swap-preheat latch so the next load
+    // computes its hold-temp fresh instead of inheriting this material's target.
+    printer_state_.clear_nozzle_load_latch();
+
     // Build the UNLOAD stepper first (HEATING + correct step list). Use the
     // explicit slot when supplied, otherwise the firmware's active slot.
     AmsSystemInfo info = backend->get_system_info();
@@ -1110,8 +1152,17 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
     int current_deci = lv_subject_get_int(printer_state_.get_active_extruder_temp_subject());
     int current = temperature::deci_to_degrees(current_deci);
 
+    // Swap-preheat: the effective load temp is the hotter of the requested
+    // material temp and the latched last-nonzero nozzle target, so a nozzle that
+    // cooled below the previous material's temp still reheats to purge it. Fold the
+    // latch into the skip/wait decision; the controller applies the same max()
+    // (against latch AND actual) when we send, via keep_previous_hot.
+    int latch =
+        static_cast<int>(std::lround(printer_state_.get_active_extruder_last_nonzero_target()));
+    int effective_target = std::max(target, latch);
+
     constexpr int TEMP_THRESHOLD = 5;
-    if (current >= (target - TEMP_THRESHOLD)) {
+    if (current >= (effective_target - TEMP_THRESHOLD)) {
         ui_initiated_heat_ = false;
         do_load_or_swap();
         return;
@@ -1119,16 +1170,18 @@ void AmsOperationSidebar::handle_load_with_preheat(int slot_index) {
 
     // Start preheating
     pending_load_slot_ = slot_index;
-    pending_load_target_temp_ = target;
+    pending_load_target_temp_ = effective_target;
     ui_initiated_heat_ = true;
 
     if (auto* c = get_temperature_controller()) {
-        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target), {.toast = false});
+        c->set_target(helix::HeaterType::Nozzle, static_cast<double>(target),
+                      {.toast = false, .keep_previous_hot = true});
     }
 
-    show_preheat_feedback(slot_index, target);
+    show_preheat_feedback(slot_index, effective_target);
 
-    spdlog::info("[AmsSidebar] Starting preheat to {}C for slot {} load", target, slot_index);
+    spdlog::info("[AmsSidebar] Starting preheat to {}C (requested {}, latch {}) for slot {} load",
+                 effective_target, target, latch, slot_index);
 }
 
 void AmsOperationSidebar::check_pending_load() {

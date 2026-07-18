@@ -87,34 +87,32 @@ inline const char* ams_type_to_string(AmsType type) {
  */
 inline AmsType ams_type_from_string(std::string_view str) {
     // Simple comparison - backends will use their own detection
-    std::string type_str(str);
-    std::transform(type_str.begin(), type_str.end(), type_str.begin(), ::tolower);
-
-    if (type_str == "mmu" || type_str == "happy_hare" || type_str == "happy hare") {
+    if (str == "mmu" || str == "happy_hare" || str == "Happy Hare") {
         return AmsType::HAPPY_HARE;
     }
-    if (type_str == "afc") {
+    if (str == "afc" || str == "AFC") {
         return AmsType::AFC;
     }
-    if (type_str == "valgace" || type_str == "bunnyace" || type_str == "duckace" || type_str == "ace" || type_str == "ace pro") {
+    if (str == "valgace" || str == "ValgACE" || str == "bunnyace" || str == "BunnyACE" ||
+        str == "duckace" || str == "DuckACE" || str == "ace" || str == "ACE Pro") {
         return AmsType::ACE;
     }
-    if (type_str == "toolchanger" || type_str == "tool_changer") {
+    if (str == "toolchanger" || str == "tool_changer" || str == "Tool Changer") {
         return AmsType::TOOL_CHANGER;
     }
-    if (type_str == "ad5x_ifs" || type_str == "ad5x ifs" || type_str == "ad5x" || type_str == "ifs") {
+    if (str == "ad5x_ifs" || str == "ad5x ifs" || str == "ad5x" || str == "ifs") {
         return AmsType::AD5X_IFS;
     }
-    if (type_str == "cfs" || type_str == "box") {
+    if (str == "cfs" || str == "CFS" || str == "box") {
         return AmsType::CFS;
     }
-    if (type_str == "snapmaker" || type_str == "snapswap") {
+    if (str == "snapmaker" || str == "snapswap" || str == "Snapmaker" || str == "SnapSwap") {
         return AmsType::SNAPMAKER;
     }
-    if (type_str == "qidi_box" || type_str == "qidi box" || type_str == "qidibox") {
+    if (str == "qidi_box" || str == "QIDI_BOX" || str == "qidi box" || str == "QIDI Box") {
         return AmsType::QIDI_BOX;
     }
-    if (type_str == "btt_vivid" || type_str == "btt vivid" || type_str == "vivid" || type_str == "mms") {
+    if (str == "btt_vivid" || str == "btt vivid" || str == "vivid" || str == "mms") {
         return AmsType::BTT_VIVID;
     }
     return AmsType::NONE;

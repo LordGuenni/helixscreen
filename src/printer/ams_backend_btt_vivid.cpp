@@ -376,7 +376,7 @@ SlotInfo AmsBackendBttVivid::get_slot_info(int slot_index) const {
 }
 
 PathTopology AmsBackendBttVivid::get_topology() const {
-    return PathTopology::HUB;
+    return PathTopology::LINEAR;
 }
 
 PathSegment AmsBackendBttVivid::get_filament_segment() const {
@@ -418,10 +418,7 @@ AmsError AmsBackendBttVivid::unload_filament(int /*slot_index*/) {
     return execute_gcode("MMS_EJECT");
 }
 
-AmsError AmsBackendBttVivid::pop_filament(int slot_index) {
-    if (auto err = validate_slot_index(slot_index); err.result != AmsResult::SUCCESS) return err;
-    return execute_gcode(fmt::format("MMS_POP SLOT={}", slot_index));
-}
+
 
 AmsError AmsBackendBttVivid::select_slot(int slot_index) {
     if (auto err = validate_slot_index(slot_index); err.result != AmsResult::SUCCESS) return err;

@@ -294,26 +294,22 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
 
     lv_subject_set_int(&slot_is_loaded_subject_, unload_eject_enabled ? 1 : 0);
 
-    // Swap button label and icon to "Eject" when in toolhead unload mode
-    // (Per requirements: Eject is for when Filament is in the Toolhead,
-    // Unload when in the shared lane but not in the toolhead).
-    lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
-    if (btn_unload) {
-        if (toolhead_unload) {
+    // Swap button label and icon to "Eject" when in eject mode
+    if (eject_mode_) {
+        lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
+        if (btn_unload) {
             ui_button_set_text(btn_unload, lv_tr("Eject"));
             ui_button_set_icon(btn_unload, "eject");
-        } else if (force_eject_mode_) {
-            // Empty/runout lane: offer "Recover" (cold IFS_F11 retract) to clear a
-            // snapped chunk the presence sensor can't see.
+        }
+    } else if (force_eject_mode_) {
+        // Empty/runout lane: offer "Recover" (cold IFS_F11 retract) to clear a
+        // snapped chunk the presence sensor can't see.
+        lv_obj_t* btn_unload = lv_obj_find_by_name(menu_obj, "btn_unload");
+        if (btn_unload) {
             ui_button_set_text(btn_unload, lv_tr("Recover"));
             ui_button_set_icon(btn_unload, "eject");
-        } else if (eject_mode_) {
-            ui_button_set_text(btn_unload, lv_tr("Unload"));
-            ui_button_set_icon(btn_unload, "z_farther");
         }
     }
-
-
 
     // QIDI Box: a lane with ejectable filament but [force_move] enable_force_move
     // off means eject is unavailable (supports_lane_eject() is false). Surface a
@@ -394,8 +390,7 @@ void AmsContextMenu::on_created(lv_obj_t* menu_obj) {
     lv_obj_t* slot_header = lv_obj_find_by_name(menu_obj, "slot_header");
     if (slot_header) {
         char header_text[32];
-        int display_idx = slot_index + 1;
-        snprintf(header_text, sizeof(header_text), lv_tr("Slot %d"), display_idx);
+        snprintf(header_text, sizeof(header_text), lv_tr("Slot %d"), slot_index + 1);
         lv_label_set_text(slot_header, header_text);
     }
 
@@ -446,10 +441,10 @@ void AmsContextMenu::handle_load() {
 void AmsContextMenu::handle_unload() {
     if (eject_mode_ || force_eject_mode_) {
         spdlog::info("[AmsContextMenu] {} requested for slot {}",
-                     force_eject_mode_ ? "Recover/force-eject" : "Unload (from lane)", get_item_index());
+                     force_eject_mode_ ? "Recover/force-eject" : "Eject", get_item_index());
         dispatch_ams_action(MenuAction::EJECT);
     } else {
-        spdlog::info("[AmsContextMenu] Eject (from toolhead) requested for slot {}", get_item_index());
+        spdlog::info("[AmsContextMenu] Unload requested for slot {}", get_item_index());
         dispatch_ams_action(MenuAction::UNLOAD);
     }
 }

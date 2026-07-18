@@ -55,7 +55,7 @@ class AmsBackendBttVivid : public AmsSubscriptionBackend {
     AmsError reset() override;
     AmsError reset_lane(int /*slot_index*/) override { return AmsErrorHelper::not_supported("Per-lane reset"); }
     AmsError eject_lane(int /*slot_index*/) override { return AmsErrorHelper::not_supported("Lane eject"); }
-    AmsError pop_filament(int slot_index) override;
+
     AmsError cancel() override;
 
     // Configuration

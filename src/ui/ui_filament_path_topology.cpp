@@ -26,7 +26,6 @@
 // re-running the heavyweight render.
 
 #include "ui_filament_path_internal.h"
-#include "ams_state.h"
 
 #include <cmath>
 #include <cstdio>
@@ -691,12 +690,15 @@ LaneState derive_lane_state(const RenderCtx& ctx, const LinearHubFrame& f, int i
         ls.lane_color = f.error_color;
     }
 
-    // For all slots: only color the lane up to the hub if the filament has reached the PREP sensor.
-    // (Previously, the active slot's lane was always colored to the hub even if filament was at the spool,
-    // which incorrectly implies the selector is engaged for systems like BTT Vivid where current_slot falls back to 0).
+    // For non-active slots with filament:
+    // - Color the line FROM spool TO sensor (we know filament is here)
+    // - Color the sensor dot (filament detected)
+    // - Gray the line PAST sensor to merge (we don't know extent beyond sensor)
+    bool is_non_active_with_filament = !ls.is_active_slot && ls.has_filament;
     bool slot_past_prep = (ls.slot_segment >= PathSegment::LANE);
-    ls.merge_line_color = (ls.has_filament && slot_past_prep) ? ls.lane_color : f.idle_color;
-    ls.merge_is_idle = !ls.has_filament || !slot_past_prep;
+    ls.merge_line_color =
+        (is_non_active_with_filament && !slot_past_prep) ? f.idle_color : ls.lane_color;
+    ls.merge_is_idle = !ls.has_filament || (is_non_active_with_filament && !slot_past_prep);
     if (!ls.has_filament) {
         ls.merge_line_color = f.idle_color;
     }
@@ -971,16 +973,6 @@ void draw_hub_section(const RenderCtx& ctx, LinearHubFrame& f) {
     resolve_hub_tint(ctx, f, hub_has_filament, &hub_bg_tinted, &hub_border_final);
 
     const char* hub_label = (data->topology == 0) ? "SELECTOR" : "HUB";
-    if (data->topology == 1) {
-        // HelixScreen accesses the backend type to determine if this is a BTT Vivid.
-        // We do this to avoid plumbing custom labels through the entire UI state tree
-        // just for one backend's preference.
-        if (auto* backend = AmsState::instance().get_backend()) {
-            if (backend->get_system_info().type == AmsType::BTT_VIVID) {
-                hub_label = "BUF";
-            }
-        }
-    }
 
     // For LINEAR topology, hub box spans the full slot area width.
     // slot_x values are slot centers, so we add half a slot width on each

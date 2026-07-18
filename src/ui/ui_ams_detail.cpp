@@ -584,6 +584,22 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
             buffer_fault = 1;
         }
     }
+    // BTT Vivid uses buffer_pcts mapping: <5% or >95% is fault, <20% or >80% is warning.
+    if (buffer_fault == 0 && info.type == AmsType::BTT_VIVID) {
+        if (effective_unit < static_cast<int>(info.units.size())) {
+            const auto& unit = info.units[effective_unit];
+            if (!unit.buffer_pcts.empty()) {
+                float pct = unit.buffer_pcts[0];
+                if (pct >= 0.0f) {
+                    if (pct < 5.0f || pct > 95.0f) {
+                        buffer_fault = 2;
+                    } else if (pct < 20.0f || pct > 80.0f) {
+                        buffer_fault = 1;
+                    }
+                }
+            }
+        }
+    }
 
     ui_filament_path_canvas_set_buffer_fault_state(canvas, buffer_fault);
 
@@ -604,15 +620,19 @@ void ams_detail_setup_path_canvas(lv_obj_t* canvas, lv_obj_t* slot_grid, int uni
         }
     }
 
-    // HH: sync_feedback_state indicates buffer
-    if (!buffer_present && info.type == AmsType::HAPPY_HARE) {
-        const auto& sf = info.sync_feedback_state;
-        if (!sf.empty() && sf != "disabled") {
+    // HH/Vivid: force buffer_present if they have buffer logic
+    if (!buffer_present) {
+        if (info.type == AmsType::BTT_VIVID) {
             buffer_present = true;
-            if (sf == "compressed")
-                buffer_state = 1;
-            else if (sf == "tension")
-                buffer_state = 2;
+        } else if (info.type == AmsType::HAPPY_HARE) {
+            const auto& sf = info.sync_feedback_state;
+            if (!sf.empty() && sf != "disabled") {
+                buffer_present = true;
+                if (sf == "compressed")
+                    buffer_state = 1;
+                else if (sf == "tension")
+                    buffer_state = 2;
+            }
         }
     }
 

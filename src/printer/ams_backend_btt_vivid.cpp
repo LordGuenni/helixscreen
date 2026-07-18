@@ -180,6 +180,16 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                             }
                         }
 
+                        // Determine if this slot currently owns the shared downstream sensors
+                        bool owns_shared = is_loaded;
+                        if (!owns_shared) {
+                            if (slot_data.contains("selector") && slot_data["selector"].is_number()) {
+                                owns_shared = (slot_data["selector"].get<int>() == 1);
+                            } else if (slot_data.contains("elector") && slot_data["elector"].is_number()) {
+                                owns_shared = (slot_data["elector"].get<int>() == 1);
+                            }
+                        }
+
                         // Get previous values if not present in this update
                         bool has_inlet = slot_data.contains("inlet") ? (slot_data["inlet"].get<int>() == 1) : 
                                          (slot_segments_[slot_idx] != PathSegment::NONE);
@@ -192,11 +202,11 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                         bool has_entry = slot_data.contains("entry") ? (slot_data["entry"].get<int>() == 1) :
                                         (static_cast<int>(slot_segments_[slot_idx]) >= static_cast<int>(PathSegment::TOOLHEAD));
 
-                        if (is_loaded || has_entry) {
+                        if (is_loaded || (has_entry && owns_shared)) {
                             slot_segments_[slot_idx] = PathSegment::TOOLHEAD;
-                        } else if (has_outlet) {
+                        } else if (has_outlet && owns_shared) {
                             slot_segments_[slot_idx] = PathSegment::OUTPUT;
-                        } else if (has_runout) {
+                        } else if (has_runout && owns_shared) {
                             slot_segments_[slot_idx] = PathSegment::HUB;
                         } else if (has_gate) {
                             slot_segments_[slot_idx] = PathSegment::PREP; // Buffer entry
@@ -274,6 +284,26 @@ void AmsBackendBttVivid::parse_mms_state(const nlohmann::json& mms_data) {
                 is_loaded = true;
             } else if (loading[0].is_string()) {
                 try { loaded_slot = std::stoi(loading[0].get<std::string>()); is_loaded = true; } catch (...) {}
+            }
+        }
+    }
+    
+    if (mms_data.contains("buffers") && mms_data["buffers"].is_object()) {
+        const auto& buffers_json = mms_data["buffers"];
+        if (buffers_json.contains("0") && buffers_json["0"].is_object()) {
+            const auto& b = buffers_json["0"];
+            if (b.contains("pct") && b["pct"].is_number()) {
+                float pct = b["pct"].get<float>();
+                
+                // Map the buffer percentage into the UI's clog detection arc meter
+                system_info_.clog_detection = 2; // Auto
+                system_info_.encoder_info.enabled = true;
+                system_info_.encoder_info.flow_rate = static_cast<int>(pct);
+                system_info_.encoder_info.detection_length = 100.0f;
+                system_info_.encoder_info.headroom = 100.0f - pct;
+                system_info_.encoder_info.desired_headroom = 10.0f; // Warn at 90% full
+                system_info_.encoder_info.min_headroom = 100.0f - pct;
+                system_info_.encoder_info.detection_mode = 2;
             }
         }
     }
@@ -529,6 +559,8 @@ AmsError AmsBackendBttVivid::execute_device_action(const std::string& action_id,
         return execute_gcode("MMS_SLOTS_WALK");
     } else if (action_id == "vivid_rfid_detect") {
         return execute_gcode("MMS_RFID_DETECT");
+    } else if (action_id == "vivid_brush") {
+        return execute_gcode("MMS_BRUSH");
     } else if (action_id == "vivid_cut") {
         return execute_gcode("MMS_CUT");
     } else if (action_id == "vivid_autoload_toggle") {

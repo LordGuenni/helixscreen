@@ -67,6 +67,23 @@ std::vector<DeviceAction> btt_vivid_default_actions() {
         .disable_reason = "",
     });
     actions.push_back({
+        .id = "vivid_brush",
+        .label = "Wipe Brush",
+        .icon = "brush",
+        .section = "maintenance",
+        .description = "Use the wipe brush",
+        .type = ActionType::BUTTON,
+        .current_value = {},
+        .options = {},
+        .min_value = 0,
+        .max_value = 0,
+        .unit = "",
+        .slot_index = -1,
+        .enabled = true,
+        .disable_reason = "",
+    });
+
+    actions.push_back({
         .id = "vivid_rfid_detect",
         .label = "Detect RFID Tags",
         .icon = "nfc",
